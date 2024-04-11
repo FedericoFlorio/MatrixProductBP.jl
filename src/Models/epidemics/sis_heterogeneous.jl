@@ -43,5 +43,5 @@ function SIS_heterogeneous(λ::SparseMatrixCSC{F,Int64}, ρ::Vector{F}, T::Int;
 end
 
 function sis_heterogeneous_factors(sis::SIS_heterogeneous{T,N,F}) where {T,N,F}
-    [fill(SIS_heterogeneousFactor(sis.λ[nzrange(sis.g.A,i)], sis.ρ[i]; α=sis.α[i]), T + 1) for i in vertices(sis.g)]
+    [[SIS_heterogeneousFactor(nonzeros(sis.λ)[nzrange(sis.λ,i)], sis.ρ[i]; α=sis.α[i]) for _ in 1:T+1] for i in vertices(sis.g)]
 end
