@@ -42,5 +42,5 @@ end
 
 # WARNING! The λs are all bound together
 function sis_heterogeneous_factors(sis::SIS_heterogeneous{T,N,F}) where {T,N,F}
-    [fill(SIS_heterogeneousFactor([sis.λ[j,i] for j in sis.λ.rowval[nzrange(sis.λ,i)]], sis.ρ[i]), T + 1) for i in vertices(sis.g)]
+    [fill(SIS_heterogeneousFactor(sis.λ[nzrange(sis.g.A,i)], sis.ρ[i]), T + 1) for i in vertices(sis.g)]
 end
