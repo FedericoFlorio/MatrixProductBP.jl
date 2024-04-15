@@ -1,6 +1,6 @@
 struct SIS_heterogeneous{T, N, F<:Real}
     g  :: IndexedGraph
-    λ  :: SparseMatrixCSC{F,Int64}
+    λ  :: Vector{F}
     ρ  :: Vector{F}
     α  :: Vector{F}
     ϕ  :: Vector{Vector{Vector{F}}}  # site observations
@@ -39,5 +39,5 @@ function SIS_heterogeneous(λ::SparseMatrixCSC{F,Int64}, ρ::Vector{F}, T::Int; 
 end
 
 function sis_heterogeneous_factors(sis::SIS_heterogeneous{T,N,F}) where {T,N,F}
-    [fill(SIS_heterogeneousFactor([sis.λ[j,i] for j in sis.λ.rowval[nzrange(sis.λ,i)]], sis.ρ[i]), T + 1) for i in vertices(sis.g)]
+    [fill(SIS_heterogeneousFactor(sis.λ[nzrange(sis.g.A,i)], sis.ρ[i]), T + 1) for i in vertices(sis.g)]
 end
