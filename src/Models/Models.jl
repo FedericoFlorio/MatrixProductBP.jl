@@ -8,7 +8,7 @@ import MatrixProductBP: exact_prob, getT, nstates, mpbp, compress!,
     prob_y_dummy, periodic_mpbp
 using MatrixProductBP
 
-import IndexedGraphs: IndexedGraph, IndexedBiDiGraph, AbstractIndexedDiGraph, ne, nv, 
+import IndexedGraphs: IndexedGraph, IndexedDiGraph, IndexedBiDiGraph, AbstractIndexedDiGraph, ne, nv, 
     outedges, idx, src, dst, inedges, neighbors, edges, vertices, IndexedEdge
 import UnPack: @unpack
 import SparseArrays: nonzeros, nzrange, rowvals, Symmetric, SparseMatrixCSC, sparse
@@ -23,6 +23,7 @@ import Unzip: unzip
 import Distributions: rand, Poisson, Distribution, Dirac, MixtureModel
 import Random: GLOBAL_RNG, shuffle!
 import Lazy: @forward
+import LinearAlgebra: issymmetric
 
 export 
     Ising, Glauber, energy,

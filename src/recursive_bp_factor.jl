@@ -1,3 +1,7 @@
+const SUSCEPTIBLE = 1 
+const INFECTIOUS = 2
+
+
 """"
 For a `w::U` where `U<:RecursiveBPFactor`, outgoing messages can be computed recursively
 A `<:RecursiveBPFactor` must implement: `nstates`, `prob_y`, `prob_xy` and `prob_yy`
@@ -107,25 +111,27 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
         Bk = map(zip(wᵢ, μin[k], ψout[k])) do (wᵢᵗ, μₖᵢᵗ, ψᵢₖᵗ)
             Pxy = zeros(nstates(wᵢᵗ,1), size(μₖᵢᵗ, 3), qi)
             @tullio avx=false Pxy[yₖ,xₖ,xᵢ] = prob_xy(wᵢᵗ,yₖ,xₖ,xᵢ,k) * ψᵢₖᵗ[xᵢ,xₖ]
-            @tullio _[m,n,yₖ,xᵢ] := Pxy[yₖ,xₖ,xᵢ] * μₖᵢᵗ[m,n,xₖ,xᵢ] 
+            @tullio _[m,n,yₖ,xᵢ] := Pxy[yₖ,xₖ,xᵢ] * μₖᵢᵗ[m,n,xₖ,xᵢ]
         end |> M2
         Bk, 0.0, 1
     end
+    # now in B there are P(yₖᵗ|xₖᵗ) m_{k→i}(yₖᵗ,xᵢᵗ) ∀k,∀t  (written as MPS)
 
+    # aggregates messages
     function op((B1, lz1, d1), (B2, lz2, d2))
-        B = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
+        B12 = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
             Pyy = zeros(nstates(wᵢᵗ,d1+d2), size(B₁ᵗ,3), size(B₂ᵗ,3), size(B₁ᵗ,4))
             @tullio avx=false Pyy[y,y1,y2,xᵢ] = prob_yy(wᵢᵗ,y,y1,y2,xᵢ,d1,d2) 
             @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
             @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
         end |> M2
-        any(any(isnan, b) for b in B) && @error "NaN in tensor train"
-        compress!(B; svd_trunc)
-        lz = normalize!(B)
-        any(any(isnan, b) for b in B) && @error "NaN in tensor train"
-        B, lz + lz1 + lz2, d1 + d2
+        any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
+        compress!(B12; svd_trunc)
+        lz = normalize!(B12)
+        any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
+        B12, lz + lz1 + lz2, d1 + d2
     end
-
+    
     Minit = [[float(prob_y0(wᵢ[t], y, xᵢ)) for _ in 1:1,
                 _ in 1:1,
                 y in 1:nstates(wᵢ[t],0),
@@ -135,7 +141,7 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
     dest, (full, logzᵢ,)  = cavity(B, op, init)
     (C, logzs) = unzip(dest)
     sumlogzᵢ₂ⱼ = sum(logzs)
-    C, full, logzᵢ, sumlogzᵢ₂ⱼ
+    C, full, logzᵢ, sumlogzᵢ₂ⱼ, B, logzs
 end
 
 # compute outgoing messages from node `i`
@@ -155,7 +161,113 @@ function onebpiter!(bp::MPBP{G,F}, i::Integer, ::Type{U};
     bp.b[i] = B |> mpem2 |> marginalize
     logzᵢ += normalize!(bp.b[i])
     bp.f[i] = (dᵢ/2-1)*logzᵢ - (1/2)*sumlogzᵢ₂ⱼ
+    # nothing
+    return logzᵢ
+end
+
+#compute derivatives of the log-likelihood with respect to infection rates of incoming edges
+function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; 
+    svd_trunc::SVDTrunc=TruncThresh(1e-6)) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
+    @unpack g, w, ϕ, ψ, μ = bp
+    M2 = eltype(μ)
+    T = getT(bp)
+    ein, eout = inedges(g,i), outedges(g,i)
+    wᵢ, ϕᵢ, dᵢ  = w[i], ϕ[i], length(ein)
+    qi = nstates(bp,i)
+    μin = μ[ein.|>idx]
+    ψout = ψ[eout.|>idx]
+
+    function op((B1, lz1, d1), (B2, lz2, d2))
+        B12 = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
+            Pyy = zeros(nstates(wᵢᵗ,d1+d2), size(B₁ᵗ,3), size(B₂ᵗ,3), size(B₁ᵗ,4))
+            @tullio avx=false Pyy[y,y1,y2,xᵢ] = prob_yy(wᵢᵗ,y,y1,y2,xᵢ,d1,d2)
+            @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
+            @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
+        end |> M2
+        lz = normalize!(B12)
+        any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
+        compress!(B12; svd_trunc)
+        any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
+        B12, lz + lz1 + lz2, d1 + d2
+    end
+
+    C, full, logzᵢ, sumlogzᵢ₂ⱼ, B, logzs = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
+
+    Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
+    bᵢ = Bᵢ |> mpem2 |> marginalize
+    zᵢ = exp(logzᵢ + normalize!(bᵢ))
+
+    λder = zeros(length(ein))
+    for j in eachindex(ein)
+        μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
+        (Bj,logzj,dj) = B[j]
+        
+        # logder = -Inf
+        der = 0.0
+        for s in 1:T
+            μⱼᵢˢ, ψᵢⱼˢ = μⱼᵢ[s], ψᵢⱼ[s]
+            for state in [INFECTIOUS, SUSCEPTIBLE]
+                Bjcopy = deepcopy(Bj)
+                Bjs = Bjcopy[s]
+
+                @tullio Bjs[m,n,yⱼ,xᵢ] = (xⱼ==INFECTIOUS)*(yⱼ==state) * ψᵢⱼˢ[xᵢ,xⱼ] * μⱼᵢˢ[m,n,xⱼ,xᵢ]
+
+                logzj = normalize!(Bjcopy)
+
+                full, logz = op((C[j], logzs[j], dᵢ-1), (Bjcopy, logzj, 1))
+                b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
+                normb = normalization(b)
+                logz += log(max(0.0,normb))
+                der += (2*state-3)*exp(logz)
+            end
+        end
+
+        λder[j] = der/zᵢ
+    end
+
+    return λder
     nothing
+end
+
+function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; 
+    svd_trunc::SVDTrunc=TruncThresh(1e-6)) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
+    @unpack g, w, ϕ, ψ, μ = bp
+    T = getT(bp)
+    ein, eout = inedges(g,i), outedges(g,i)
+    wᵢ, ϕᵢ, dᵢ  = w[i], ϕ[i], length(ein)
+    qi = nstates(bp,i)
+    μin = μ[ein.|>idx]
+    ψout = ψ[eout.|>idx]
+
+    C, full, logzᵢ, sumlogzᵢ₂ⱼ, B, logzs = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
+
+    Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
+    bᵢ = Bᵢ |> mpem2 |> marginalize
+    zᵢ = exp(logzᵢ + normalize!(bᵢ))
+
+    ρder = 0.0
+    for s in 1:T
+        q = length(ϕᵢ[1])
+        B = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]   # can remove the qj=1 (and also all dependences on xⱼᵗ afterwards)?
+        for t in 1:T
+            fullᵗ,Bᵗ = full[t], B[t]
+            W = zeros(q,q,1,size(fullᵗ,3))
+            if t==s
+                @tullio avx=false W[xᵢᵗ⁺¹,INFECTIOUS,xⱼᵗ,yᵗ] = ((xᵢᵗ⁺¹==SUSCEPTIBLE)-(xᵢᵗ⁺¹==INFECTIOUS)) * ϕᵢ[$t][INFECTIOUS]
+            else
+                @tullio avx=false W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] = prob_y(wᵢ[$t],xᵢᵗ⁺¹,xᵢᵗ,yᵗ,1) * ϕᵢ[$t][xᵢᵗ]
+            end
+            @tullio Bᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] * fullᵗ[m,n,yᵗ,xᵢᵗ]
+        end
+        fullᵀ,Bᵀ = full[end], B[end]
+        @tullio Bᵀ[m,n,xᵢᵀ,xⱼᵀ,xᵢᵀ⁺¹] = fullᵀ[m,n,yᵀ,xᵢᵀ] * ϕᵢ[end][xᵢᵀ]
+        any(any(isnan, b) for b in B) && @error "NaN in tensor train"
+
+        b = MPEM3(B) |> mpem2
+        ρder += normalization(b)*exp(logzᵢ)
+    end
+
+    return ρder/zᵢ
 end
 
 # write message to destination after applying damping
