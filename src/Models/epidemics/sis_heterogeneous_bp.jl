@@ -71,4 +71,4 @@ function prob_xy(wᵢ::SIS_heterogeneousFactor, yₖ, xₖ, xᵢ, k)
     (yₖ == INFECTIOUS)*λ[k]*(xₖ==INFECTIOUS) + (yₖ == SUSCEPTIBLE)*(1-λ[k]*(xₖ==INFECTIOUS))
 end
 
-prob_yy(wᵢ::SIS_heterogeneousFactor, y, y1, y2, xᵢ) = 1.0*((y == INFECTIOUS) == ((y1 == INFECTIOUS) || (y2 == INFECTIOUS)))
+prob_yy(wᵢ::SIS_heterogeneousFactor, y, y1, y2, xᵢ) = 1.0*((y==INFECTIOUS) == ((y1==INFECTIOUS) || (y2==INFECTIOUS)))
