@@ -1,3 +1,7 @@
+const SUSCEPTIBLE = 1 
+const INFECTIOUS = 2
+
+
 """"
 For a `w::U` where `U<:RecursiveBPFactor`, outgoing messages can be computed recursively
 A `<:RecursiveBPFactor` must implement: `nstates`, `prob_y`, `prob_xy` and `prob_yy`
@@ -120,12 +124,12 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
             @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
             @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
         end
-        B = M2(BB; z = B1.z * B2.z)
-        any(any(isnan, b) for b in B) && @error "NaN in tensor train"
-        compress!(B; svd_trunc)
-        normalize_eachmatrix!(B)    # keep this one?
-        any(any(isnan, b) for b in B) && @error "NaN in tensor train"
-        B, d1 + d2
+        BB = M2(BB; z = B1.z * B2.z)
+        any(any(isnan, b) for b in BB) && @error "NaN in tensor train"
+        compress!(BB; svd_trunc)
+        normalize_eachmatrix!(BB)    # keep this one?
+        any(any(isnan, b) for b in BB) && @error "NaN in tensor train"
+        BB, d1 + d2
     end
     
     Minit = [[float(prob_y0(wᵢ[t], y, xᵢ)) for _ in 1:1,
@@ -136,7 +140,7 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
     init = (M2(Minit), 0)
     dest, (full,)  = cavity(B, op, init)
     (C,) = unzip(dest)
-    C, full
+    C, full, B
 end
 
 # compute outgoing messages from node `i`
