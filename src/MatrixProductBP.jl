@@ -46,7 +46,7 @@ export
     normalization, normalize!, marginalize,
     orthogonalize_right!, orthogonalize_left!, compress!, twovar_marginals, evaluate,
     BPFactor, nstates, MPBP, mpbp, reset_messages!, reset_beliefs!, reset_observations!,
-    reset!, is_free_dynamics, onebpiter!, CB_BP, iterate!, 
+    reset!, is_free_dynamics, onebpiter!, der_λ, der_ρ, CB_BP, iterate!, 
     pair_beliefs, pair_beliefs_as_mpem, beliefs_tu, autocorrelations,
     autocovariances, means, 
     pair_correlations, alternate_marginals, alternate_correlations,
