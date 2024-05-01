@@ -16,7 +16,7 @@ using Measurements: Measurement, ±, value, uncertainty
 using Statistics: mean, std
 using Unzip: unzip
 using StatsBase: weights, proportions
-using LogExpFunctions: logistic, logsumexp
+using LogExpFunctions: logistic, logsumexp, logaddexp, logsubexp
 using .Threads: SpinLock, lock, unlock, @threads
 using Lazy: @forward
 using CavityTools: cavity
@@ -46,7 +46,7 @@ export
     normalization, normalize!, marginalize,
     orthogonalize_right!, orthogonalize_left!, compress!, twovar_marginals, evaluate,
     BPFactor, nstates, MPBP, mpbp, reset_messages!, reset_beliefs!, reset_observations!,
-    reset!, is_free_dynamics, onebpiter!, der_λ, der_ρ, CB_BP, iterate!, 
+    reset!, is_free_dynamics, onebpiter!, CB_BP, iterate!, 
     pair_beliefs, pair_beliefs_as_mpem, beliefs_tu, autocorrelations,
     autocovariances, means, 
     pair_correlations, alternate_marginals, alternate_correlations,
@@ -67,7 +67,8 @@ export
     RestrictedRecursiveBPFactor,
     mpbp_stationary, mpbp_stationary_infinite_graph, mpbp_stationary_infinite_bipartite_graph,
     CB_BPVUMPS, TruncVUMPS,
-    mean_with_uncertainty
+    mean_with_uncertainty,
+    der_λ, der_ρ#, stepga!, PARAMS, CB_INF, inference_parameters
 
 
 include("utils.jl")
@@ -81,6 +82,7 @@ include("infinite_graph.jl")
 include("exact.jl")
 include("sampling.jl")
 include("stationary.jl")
+include("sis_inference.jl")
 
 include("Models/Models.jl")
 
