@@ -42,7 +42,7 @@ export
     MPEM1, MPEM2, MPEM3, mpem2, rand_mpem1, rand_mpem2, normalization, normalize!, marginalize,
     orthogonalize_right!, orthogonalize_left!, compress!, twovar_marginals, evaluate,
     BPFactor, nstates, MPBP, mpbp, reset_messages!, reset_beliefs!, reset_observations!,
-    reset!, is_free_dynamics, onebpiter!, der_λ, der_ρ, CB_BP, iterate!, 
+    reset!, is_free_dynamics, onebpiter!, CB_BP, iterate!, 
     pair_beliefs, pair_beliefs_as_mpem, beliefs_tu, autocorrelations,
     autocovariances, means, beliefs, bethe_free_energy, 
     periodic_mpbp, is_periodic,
