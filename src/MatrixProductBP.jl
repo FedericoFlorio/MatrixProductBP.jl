@@ -70,7 +70,7 @@ include("test_factors.jl")
 include("infinite_graph.jl")
 include("exact.jl")
 include("sampling.jl")
-include("sis_inference.jl")
+# include("sis_inference.jl")
 
 include("Models/Models.jl")
 
