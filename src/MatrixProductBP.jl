@@ -16,7 +16,7 @@ using Measurements: Measurement, ±
 using Statistics: mean, std
 using Unzip: unzip
 using StatsBase: weights, proportions
-using LogExpFunctions: logistic, logsumexp
+using LogExpFunctions: logistic, logsumexp, logaddexp, logsubexp
 using .Threads: SpinLock, lock, unlock, @threads
 using Lazy: @forward
 using CavityTools: cavity
@@ -42,7 +42,7 @@ export
     MPEM1, MPEM2, MPEM3, mpem2, rand_mpem1, rand_mpem2, normalization, normalize!, marginalize,
     orthogonalize_right!, orthogonalize_left!, compress!, twovar_marginals, evaluate,
     BPFactor, nstates, MPBP, mpbp, reset_messages!, reset_beliefs!, reset_observations!,
-    reset!, is_free_dynamics, onebpiter!, der_λ, der_ρ, CB_BP, iterate!, 
+    reset!, is_free_dynamics, onebpiter!, CB_BP, iterate!, 
     pair_beliefs, pair_beliefs_as_mpem, beliefs_tu, autocorrelations,
     autocovariances, means, beliefs, bethe_free_energy, 
     periodic_mpbp, is_periodic,
@@ -56,7 +56,8 @@ export
     continuous_sis_sampler, simulate_queue_sis!,
     draw_node_observations!, AtomicVector,
     RecursiveBPFactor, DampedFactor, RecursiveTraceFactor, GenericFactor,
-    RestrictedRecursiveBPFactor
+    RestrictedRecursiveBPFactor,
+    der_λ, der_ρ#, stepga!, PARAMS, CB_INF, inference_parameters
 
 
 include("utils.jl")
@@ -69,6 +70,7 @@ include("test_factors.jl")
 include("infinite_graph.jl")
 include("exact.jl")
 include("sampling.jl")
+include("sis_inference.jl")
 
 include("Models/Models.jl")
 
