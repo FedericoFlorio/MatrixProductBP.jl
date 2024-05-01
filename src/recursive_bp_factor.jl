@@ -195,7 +195,8 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U};
 
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
-    zᵢ = exp(logzᵢ + normalize!(bᵢ))
+    logzᵢ += normalize!(bᵢ)
+    # zᵢ = exp(logzᵢ + normalize!(bᵢ))
 
     λder = zeros(length(ein))
     for j in eachindex(ein)
@@ -206,27 +207,25 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U};
         der = 0.0
         for s in 1:T
             μⱼᵢˢ, ψᵢⱼˢ = μⱼᵢ[s], ψᵢⱼ[s]
+            Bjs = Bj[s]
+            Bjsold = copy(Bjs)
             for state in [INFECTIOUS, SUSCEPTIBLE]
-                Bjcopy = deepcopy(Bj)
-                Bjs = Bjcopy[s]
+                @tullio Bjs[m,n,yⱼ,xᵢ] = (yⱼ==state) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] *  μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
 
-                @tullio Bjs[m,n,yⱼ,xᵢ] = (xⱼ==INFECTIOUS)*(yⱼ==state) * ψᵢⱼˢ[xᵢ,xⱼ] * μⱼᵢˢ[m,n,xⱼ,xᵢ]
-
-                logzj = normalize!(Bjcopy)
-
-                full, logz = op((C[j], logzs[j], dᵢ-1), (Bjcopy, logzj, 1))
+                full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, 0.0, 1))
                 b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
                 normb = normalization(b)
                 logz += log(max(0.0,normb))
                 der += (2*state-3)*exp(logz)
             end
+            Bj[s] = Bjsold
         end
 
-        λder[j] = der/zᵢ
+        λder[j] = sign(der) * exp(log(abs(der)) - logzᵢ)
+        # λder[j] = der/zᵢ
     end
 
     return λder
-    nothing
 end
 
 function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; 
@@ -243,7 +242,8 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U};
 
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
-    zᵢ = exp(logzᵢ + normalize!(bᵢ))
+    logzᵢ += normalize!(bᵢ)
+    # zᵢ = exp(logzᵢ + normalize!(bᵢ))
 
     ρder = 0.0
     for s in 1:T
@@ -267,7 +267,8 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U};
         ρder += normalization(b)*exp(logzᵢ)
     end
 
-    return ρder/zᵢ
+    return sign(ρder) * exp(log(abs(ρder)) - logzᵢ)
+    # return ρder/zᵢ
 end
 
 # write message to destination after applying damping
