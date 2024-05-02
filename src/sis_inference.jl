@@ -1,4 +1,4 @@
-const SUSCEPTIBLE = 1 
+const SUSCEPTIBLE = 1
 const INFECTIOUS = 2
 
 #compute derivatives of the log-likelihood with respect to infection rates of incoming edges
@@ -19,7 +19,15 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
             @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
             @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
         end |> M2
-        lz = normalize!(B12)
+        lz = if isapprox(normalization(B12),0,atol=1e-12)
+            for i in eachindex(B12)
+                # B12[i] = zero(B12[i])
+                B12[i] = zeros(1,1,size(B12[i])[3:4]...)
+            end
+            0.0
+        else
+            normalize!(B12)
+        end
         any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
         compress!(B12; svd_trunc)
         any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
@@ -137,23 +145,9 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
     end
 
     for j in 1:dᵢ
-        if wᵢ[1].λ[j] < 0
-            wᵢ[1].λ[j] = 0+1e-6
-        end
-        # wᵢ[1].λ[j] < 0 && wᵢ[1].λ[j] = 0+1e-6
-        if wᵢ[1].λ[j] > 1
-            wᵢ[1].λ[j] = 1-1e-6
-        end
-        # wᵢ[1].λ[j] > 1 && wᵢ[1].λ[j] = 1-1e-6
+        wᵢ[1].λ[j] = clamp(wᵢ[1].λ[j], 1e-6, 1-1e-6)
     end
-    if wᵢ[1].ρ < 0
-        wᵢ[1].ρ = 0+1e-6
-    end
-    # wᵢ[1].ρ[j] < 0 && wᵢ[1].ρ[j] = 0+1e-6
-    if wᵢ[1].ρ > 1
-        wᵢ[1].ρ = 1-1e-6
-    end
-    # wᵢ[1].ρ[j] > 1 && wᵢ[1].ρ[j] = 1-1e-6
+    wᵢ[1].ρ = clamp(wᵢ[1].ρ, 1e-6, 1-1e-6)
 
     return nothing
 end
@@ -216,7 +210,7 @@ function (cb_inf::CB_INF)(bp::MPBP, it::Integer, svd_trunc::SVDTrunc)
     return Δ
 end
 
-function inference_parameters(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress))
+function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress))
 
     for iter in 1:maxiter
         for i in nodes

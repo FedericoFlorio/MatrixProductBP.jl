@@ -57,7 +57,7 @@ export
     draw_node_observations!, AtomicVector,
     RecursiveBPFactor, DampedFactor, RecursiveTraceFactor, GenericFactor,
     RestrictedRecursiveBPFactor,
-    der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters
+    der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!
 
 
 include("utils.jl")
@@ -70,7 +70,7 @@ include("test_factors.jl")
 include("infinite_graph.jl")
 include("exact.jl")
 include("sampling.jl")
-# include("sis_inference.jl")
+include("sis_inference.jl")
 
 include("Models/Models.jl")
 
