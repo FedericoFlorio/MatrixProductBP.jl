@@ -65,10 +65,10 @@ export
     draw_node_observations!, AtomicVector,
     RecursiveBPFactor, DampedFactor, RecursiveTraceFactor, GenericFactor,
     RestrictedRecursiveBPFactor,
+    der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!
     mpbp_stationary, mpbp_stationary_infinite_graph, mpbp_stationary_infinite_bipartite_graph,
     CB_BPVUMPS, TruncVUMPS,
-    mean_with_uncertainty,
-    der_λ, der_ρ#, stepga!, PARAMS, CB_INF, inference_parameters
+    mean_with_uncertainty
 
 
 include("utils.jl")
