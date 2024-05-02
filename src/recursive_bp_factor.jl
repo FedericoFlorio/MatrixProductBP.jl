@@ -1,7 +1,3 @@
-const SUSCEPTIBLE = 1 
-const INFECTIOUS = 2
-
-
 """"
 For a `w::U` where `U<:RecursiveBPFactor`, outgoing messages can be computed recursively
 A `<:RecursiveBPFactor` must implement: `nstates`, `prob_y`, `prob_xy` and `prob_yy`
