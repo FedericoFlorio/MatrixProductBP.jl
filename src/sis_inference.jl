@@ -122,32 +122,40 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
     wᵢ, dᵢ  = w[i], length(ein)
     # @assert wᵢ[1] isa U
 
-    λder = der_λ(bp, i, eltype(bp.w[1]); svd_trunc)
-    ρder = der_ρ(bp, i, eltype(bp.w[1]); svd_trunc)
+    λder = der_λ(bp, i, eltype(bp.w[i]); svd_trunc)
+    ρder = der_ρ(bp, i, eltype(bp.w[i]); svd_trunc)
     
     if method==1
-        for j in 1:dᵢ
-            wᵢ[1].λ[j] += λstep*λder[j]
+        for t in eachindex(wᵢ)
+            for j in 1:dᵢ
+                wᵢ[t].λ[j] += λstep*λder[j]
+            end
+        wᵢ[t].ρ += ρstep*ρder
         end
-        wᵢ[1].ρ += ρstep*ρder
 
     elseif method==2
-        for j in 1:dᵢ
-            wᵢ[1].λ[j] *= (1 + λstep*sign(λder[j]))
+        for t in eachindex(wᵢ)
+            for j in 1:dᵢ
+                wᵢ[t].λ[j] *= (1 + λstep*sign(λder[j]))
+            end
+            wᵢ[t].ρ *= (1 + ρstep*sign(ρder))
         end
-        wᵢ[1].ρ *= (1 + ρstep*sign(ρder))
 
     elseif method==3
-        for j in 1:dᵢ
-            wᵢ[1].λ[j] += λstep*sign(λder[j])
+        for t in eachindex(wᵢ)
+            for j in 1:dᵢ
+                wᵢ[t].λ[j] += λstep*sign(λder[j])
+            end
+            wᵢ[t].ρ += ρstep*sign(ρder)
         end
-        wᵢ[1].ρ += ρstep*sign(ρder)
     end
 
-    for j in 1:dᵢ
-        wᵢ[1].λ[j] = clamp(wᵢ[1].λ[j], 1e-6, 1-1e-6)
+    for t in eachindex(wᵢ)
+        for j in 1:dᵢ
+            wᵢ[t].λ[j] = clamp(wᵢ[1].λ[j], 1e-6, 1-1e-6)
+        end
+        wᵢ[t].ρ = clamp(wᵢ[1].ρ, 1e-6, 1-1e-6)
     end
-    wᵢ[1].ρ = clamp(wᵢ[1].ρ, 1e-6, 1-1e-6)
 
     return nothing
 end
@@ -213,11 +221,11 @@ end
 function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress))
 
     for iter in 1:maxiter
-        for i in nodes
+        Threads.@threads for i in nodes
             onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp=0.0)     # why damp?
         end
 
-        for i in nodes
+        Threads.@threads for i in nodes
             stepga!(bp, i, λstep, ρstep; method, svd_trunc)
         end
 
