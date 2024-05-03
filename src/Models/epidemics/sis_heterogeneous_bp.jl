@@ -1,7 +1,7 @@
 const SUSCEPTIBLE = 1 
 const INFECTIOUS = 2
 
-struct SIS_heterogeneousFactor{T<:AbstractFloat} <: RecursiveBPFactor
+mutable struct SIS_heterogeneousFactor{T<:AbstractFloat} <: RecursiveBPFactor
     λ :: Vector{T}  # incoming infection probabilities
     ρ :: T          # recovery probability
     α :: T          # auto-infection probability
