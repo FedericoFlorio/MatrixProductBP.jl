@@ -30,17 +30,17 @@ function SIS_heterogeneous(g::IndexedGraph{Int}, λ::SparseMatrixCSC{F,Int64}, �
         γ = 0.5,
         ϕ = [[t == 0 ? (length(γ)==1 ? [1-γ, γ] : [1-γ[i],γ[i]]) : ones(2) for t in 0:T] for i in vertices(g)]) where {F<:Real}
         
-    return SIS_heterogeneous(g, λ, ρ, ϕ, ψ)
+    return SIS_heterogeneous(g, λ, ρ, α, ϕ, ψ)
 end
 
 function SIS_heterogeneous(λ::SparseMatrixCSC{F,Int64}, ρ::Vector{F}, T::Int; γ=0.5, α::Vector{F}=zeros(size(λ,1))) where {F<:Real}
     A = ones(Int,size(λ)[1],size(λ)[2]) - iszero.(λ)
     g = IndexedGraph(A+A')
     
-    return SIS_heterogeneous(g, λ, ρ, T; γ=γ)
+    return SIS_heterogeneous(g, λ, ρ, T; γ, α)
 end
 
 # WARNING! The λs are all bound together
 function sis_heterogeneous_factors(sis::SIS_heterogeneous{T,N,F}) where {T,N,F}
-    [[SIS_heterogeneousFactor(nonzeros(sis.λ)[nzrange(sis.λ,i)], sis.ρ[i]) for _ in 1:T+1] for i in vertices(sis.g)]
+    [[SIS_heterogeneousFactor(nonzeros(sis.λ)[nzrange(sis.λ,i)], sis.ρ[i]; α=sis.α[i]) for _ in 1:T+1] for i in vertices(sis.g)]
 end
