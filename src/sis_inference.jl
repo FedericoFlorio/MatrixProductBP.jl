@@ -101,6 +101,7 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     for j in eachindex(ein)
         μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
         (Bj,logzj,dj) = B[j]
+        logzj += normalize!(Bj)
         
         der = Logarithmic(0.0)
         for s in 1:T
@@ -126,7 +127,7 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
 end
 
 # computes derivatives of the log-likelihood with respect to recovery rate
-function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6)) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
+function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
     @unpack g, w, ϕ, ψ, μ = bp
     T = getT(bp)
     ein, eout = inedges(g,i), outedges(g,i)
