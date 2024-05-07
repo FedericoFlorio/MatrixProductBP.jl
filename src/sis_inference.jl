@@ -1,8 +1,8 @@
 const SUSCEPTIBLE = 1
 const INFECTIOUS = 2
 
-#compute derivatives of the log-likelihood with respect to infection rates of incoming edges
-function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6)) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
+# compute derivatives of the log-likelihood with respect to infection rates of incoming edges
+function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
     @unpack g, w, ϕ, ψ, μ = bp
     M2 = eltype(μ)
     T = getT(bp)
@@ -19,9 +19,8 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
             @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
             @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
         end |> M2
-        lz = if isapprox(normalization(B12),0,atol=1e-12)
+        lz = if normalization(B12)<1e-38
             for i in eachindex(B12)
-                # B12[i] = zero(B12[i])
                 B12[i] = zeros(1,1,size(B12[i])[3:4]...)
             end
             0.0
@@ -39,14 +38,13 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
     logzᵢ += normalize!(bᵢ)
-    # zᵢ = exp(logzᵢ + normalize!(bᵢ))
 
     λder = zeros(length(ein))
     for j in eachindex(ein)
         μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
         (Bj,logzj,dj) = B[j]
+        logzj += normalize!(Bj)
         
-        # logder = -Inf
         der = 0.0
         for s in 1:T
             μⱼᵢˢ, ψᵢⱼˢ = μⱼᵢ[s], ψᵢⱼ[s]
@@ -54,25 +52,24 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
             Bjsold = copy(Bjs)
             for state in [INFECTIOUS, SUSCEPTIBLE]
                 @tullio Bjs[m,n,yⱼ,xᵢ] = (yⱼ==state) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] *  μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
-
+                
                 full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, 0.0, 1))
                 b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
                 normb = normalization(b)
                 logz += log(max(0.0,normb))
-                der += (2*state-3)*exp(logz)
+                der += (2*state-3)*exp(logz + logzj - logzᵢ)
             end
             Bj[s] = Bjsold
         end
 
-        λder[j] = sign(der) * exp(log(abs(der)) - logzᵢ)
-        # λder[j] = der/zᵢ
+        λder[j] = der + logpriorder(wᵢ[1].λ[j])
     end
 
     return λder
 end
 
 # computes derivatives of the log-likelihood with respect to recovery rate
-function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6)) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
+function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
     @unpack g, w, ϕ, ψ, μ = bp
     T = getT(bp)
     ein, eout = inedges(g,i), outedges(g,i)
@@ -86,7 +83,6 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
     logzᵢ += normalize!(bᵢ)
-    # zᵢ = exp(logzᵢ + normalize!(bᵢ))
 
     ρder = 0.0
     for s in 1:T
@@ -110,20 +106,18 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
         ρder += normalization(b)*exp(logzᵢ)
     end
 
-    return sign(ρder) * exp(log(abs(ρder)) - logzᵢ)
-    # return ρder/zᵢ
+    return sign(ρder) * exp(log(abs(ρder)) - logzᵢ) + logpriorder(wᵢ[1].ρ)
 end
 
 
 # performs one step of Gradient Ascent for parameters of node i (i.e. infection rates of incoming edges and recovery rate)
-function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; method::Integer=1, svd_trunc::SVDTrunc=TruncThresh(1e-6)) where {G<:AbstractIndexedDiGraph,F<:Real,U<:RecursiveBPFactor}
+function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; method::Integer=1, svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0, progress::Float64=Inf) where {G<:AbstractIndexedDiGraph,F<:Real,U<:RecursiveBPFactor}
     @unpack g, w = bp
     ein = inedges(g,i)
     wᵢ, dᵢ  = w[i], length(ein)
-    # @assert wᵢ[1] isa U
 
-    λder = der_λ(bp, i, eltype(bp.w[i]); svd_trunc)
-    ρder = der_ρ(bp, i, eltype(bp.w[i]); svd_trunc)
+    λder = der_λ(bp, i, eltype(bp.w[i]); svd_trunc, logpriorder)
+    ρder = der_ρ(bp, i, eltype(bp.w[i]); svd_trunc, logpriorder)
     
     if method==1
         for t in eachindex(wᵢ)
@@ -141,6 +135,14 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
             wᵢ[t].ρ *= (1 + ρstep*sign(ρder))
         end
 
+    elseif method==21
+        for t in eachindex(wᵢ)
+            for j in 1:dᵢ
+                wᵢ[t].λ[j] *= (1 + λstep*sign(λder[j])*5^(progress<.2))
+            end
+            wᵢ[t].ρ *= (1 + ρstep*sign(ρder)*5^(progress<.2))
+        end
+
     elseif method==3
         for t in eachindex(wᵢ)
             for j in 1:dᵢ
@@ -148,6 +150,15 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
             end
             wᵢ[t].ρ += ρstep*sign(ρder)
         end
+
+    elseif method==31
+        for t in eachindex(wᵢ)
+            for j in 1:dᵢ
+                wᵢ[t].λ[j] += λstep*sign(λder[j])*5^(progress<.25)
+            end
+            wᵢ[t].ρ += ρstep*sign(ρder)*5^(progress<.25)
+        end
+
     end
 
     for t in eachindex(wᵢ)
@@ -218,15 +229,15 @@ function (cb_inf::CB_INF)(bp::MPBP, it::Integer, svd_trunc::SVDTrunc)
     return Δ
 end
 
-function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress))
+function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0, showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress))
 
     for iter in 1:maxiter
         Threads.@threads for i in nodes
-            onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp=0.0)     # why damp?
+            onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp=0.0)
         end
 
         Threads.@threads for i in nodes
-            stepga!(bp, i, λstep, ρstep; method, svd_trunc)
+            stepga!(bp, i, λstep, ρstep; method, svd_trunc, logpriorder, progress=iter/maxiter)
         end
 
         Δ = cb_inf(bp,iter,svd_trunc)

@@ -1,8 +1,8 @@
 struct SIS_heterogeneous{T, N, F<:Real}
     g  :: IndexedGraph
-    λ  :: SparseMatrixCSC{F}
-    ρ  :: Vector{F}
-    α  :: Vector{F}
+    λ  :: SparseMatrixCSC{F}         # infection probabilities
+    ρ  :: Vector{F}                  # recovery probabilities
+    α  :: Vector{F}                  # auto-infection probabilities
     ϕ  :: Vector{Vector{Vector{F}}}  # site observations
     ψ  :: Vector{Vector{Matrix{F}}}  # edge observations
     function SIS_heterogeneous(g::IndexedGraph, λ::SparseMatrixCSC{F,Int64}, ρ::Vector{F},
