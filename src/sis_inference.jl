@@ -145,6 +145,7 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     for s in 1:T
         q = length(ϕᵢ[1])
         B = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]   # can remove the qj=1 (and also all dependences on xⱼᵗ afterwards)?
+        # the following for can be avoided by precomputing
         for t in 1:T
             fullᵗ,Bᵗ = full[t], B[t]
             W = zeros(q,q,1,size(fullᵗ,3))
