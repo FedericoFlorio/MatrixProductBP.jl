@@ -1,6 +1,71 @@
 const SUSCEPTIBLE = 1
 const INFECTIOUS = 2
 
+
+# a set of functions to normalize tensor trains and avoid unerflow
+trace(At) = @tullio _[aᵗ,aᵗ⁺¹] := reshape(At, size(At,1), size(At,2), :)[aᵗ,aᵗ⁺¹,x]
+
+function accumulate_L_uf(A::AbstractTensorTrain)
+    L = Matrix(I, size(A[begin],1), size(A[begin],1))
+    z = sum(abs,L)
+    L /= z
+    logz = log(z)
+    for At in A
+        L = L * trace(At)
+        z = sum(abs,L)
+        z==0 && return -Inf
+        L /= z
+        logz += log(z)
+    end
+    tr(L[end]) ≤ 0 && return -Inf
+    logz
+end
+
+function accumulate_R_uf(A::AbstractTensorTrain)
+    R = Matrix(I, size(A[end],2), size(A[end],2))
+    z = sum(abs,R)
+    R /= z
+    logz = log(z)
+    for At in A
+        R = trace(At) * R
+        z = sum(abs,R)
+        z==0 && return -Inf
+        R /= z
+        logz += log(z)
+    end
+    tr(R[end]) ≤ 0 && return -Inf
+    logz
+end
+
+function normalization_uf(A::AbstractTensorTrain)
+    lz = accumulate_L_uf(A)
+    @debug let lzr = accumulate_R_uf(A)
+        @assert log(tr(R[begin])) + lzr ≈ logz "z=$z, got $(tr(r[begin])), A=$A"  # sanity check
+    end
+    return lz
+end
+
+function normalize_eachmatrix_uf!(A::AbstractTensorTrain)
+    c = 0.0
+    for m in A
+        mm = maximum(abs, m)
+        if !any(isnan, mm) && !any(isinf, mm) && !any(iszero, mm)
+            m ./= mm
+            c += log(mm)
+        end
+    end
+    c
+end
+
+function normalize_uf!(A::AbstractTensorTrain)
+    c = normalize_eachmatrix_uf!(A)
+    logZ = normalization_uf(A)
+
+
+    
+    logZ + c
+end
+
 # compute derivatives of the log-likelihood with respect to infection rates of incoming edges
 function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
     @unpack g, w, ϕ, ψ, μ = bp
@@ -19,14 +84,8 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
             @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
             @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
         end |> M2
-        lz = if normalization(B12)<1e-38
-            for i in eachindex(B12)
-                B12[i] = zeros(1,1,size(B12[i])[3:4]...)
-            end
-            0.0
-        else
-            normalize!(B12)
-        end
+
+        lz = normalize_eachmatrix_uf!(B12)
         any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
         compress!(B12; svd_trunc)
         any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
@@ -55,8 +114,8 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
                 
                 full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, 0.0, 1))
                 b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
-                normb = normalization(b)
-                logz += log(max(0.0,normb))
+                normb = normalization_uf(b)
+                logz += normb
                 der += (2*state-3)*exp(logz + logzj - logzᵢ)
             end
             Bj[s] = Bjsold
@@ -111,7 +170,7 @@ end
 
 
 # performs one step of Gradient Ascent for parameters of node i (i.e. infection rates of incoming edges and recovery rate)
-function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; method::Integer=1, svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0, progress::Float64=Inf) where {G<:AbstractIndexedDiGraph,F<:Real,U<:RecursiveBPFactor}
+function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; method::Integer=1, svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0, progress::Float64=Inf) where {G<:AbstractIndexedDiGraph,F<:Real}
     @unpack g, w = bp
     ein = inedges(g,i)
     wᵢ, dᵢ  = w[i], length(ein)
@@ -159,6 +218,8 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
             wᵢ[t].ρ += ρstep*sign(ρder)*5^(progress<.25)
         end
 
+    else
+        @error "Invalid method"
     end
 
     for t in eachindex(wᵢ)
@@ -180,7 +241,7 @@ struct PARAMS{T}
     end
 end
 
-function save_data(bp::MPBP; sites=vertices(bp.g)) where {F}
+function save_data(bp::MPBP; sites=vertices(bp.g))
     @unpack w = bp
     λ = [similar(w[i][1].λ) for i in sites]
     ρ = zeros(length(sites))
@@ -234,10 +295,12 @@ function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, 
     for iter in 1:maxiter
         Threads.@threads for i in nodes
             onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp=0.0)
+            # jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/trace_error/bp_it$(iter)_node$(i)_bp.jld2"; bp)
         end
 
         Threads.@threads for i in nodes
             stepga!(bp, i, λstep, ρstep; method, svd_trunc, logpriorder, progress=iter/maxiter)
+            # jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/trace_error/bp_it$(iter)_node$(i)_ga.jld2"; bp)
         end
 
         Δ = cb_inf(bp,iter,svd_trunc)
