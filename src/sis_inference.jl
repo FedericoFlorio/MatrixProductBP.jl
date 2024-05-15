@@ -102,7 +102,6 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     for j in eachindex(ein)
         μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
         (Bj,logzj,dj) = B[j]
-        logzj += normalize!(Bj)
         
         der = 0.0
         for s in 1:T
