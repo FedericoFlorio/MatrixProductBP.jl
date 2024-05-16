@@ -85,9 +85,9 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
             @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
         end |> M2
 
-        lz = normalize_eachmatrix_uf!(B12)
         any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
         compress!(B12; svd_trunc)
+        lz = normalize!(B12)
         any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
         B12, lz + lz1 + lz2, d1 + d2
     end
@@ -113,7 +113,7 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
                 
                 full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, 0.0, 1))
                 b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
-                normb = normalization_uf(b)
+                normb = normalization(b)
                 logz += normb
                 der += (2*state-3)*exp(logz + logzj - logzᵢ)
             end
