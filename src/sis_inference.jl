@@ -60,8 +60,6 @@ end
 function normalize_uf!(A::AbstractTensorTrain)
     c = normalize_eachmatrix_uf!(A)
     logZ = normalization_uf(A)
-
-
     
     logZ + c
 end
@@ -102,7 +100,7 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     for j in eachindex(ein)
         μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
         (Bj,logzj,dj) = B[j]
-        
+
         der = 0.0
         for s in 1:T
             μⱼᵢˢ, ψᵢⱼˢ = μⱼᵢ[s], ψᵢⱼ[s]
@@ -110,8 +108,8 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
             Bjsold = copy(Bjs)
             for state in [INFECTIOUS, SUSCEPTIBLE]
                 @tullio Bjs[m,n,yⱼ,xᵢ] = (yⱼ==state) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] *  μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
-                
-                full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, 0.0, 1))
+
+                full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, logzj, dj))
                 b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
                 normb = normalization_uf(b)
                 logz += normb
