@@ -94,7 +94,7 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
 
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
-    logzᵢ += normalize!(bᵢ)
+    logzᵢ += normalization_uf(bᵢ)
 
     λder = zeros(length(ein))
     for j in eachindex(ein)
@@ -106,14 +106,16 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
             μⱼᵢˢ, ψᵢⱼˢ = μⱼᵢ[s], ψᵢⱼ[s]
             Bjs = Bj[s]
             Bjsold = copy(Bjs)
+            
             for state in [INFECTIOUS, SUSCEPTIBLE]
-                @tullio Bjs[m,n,yⱼ,xᵢ] = (yⱼ==state) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] *  μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
+                @tullio Bjs[m,n,yⱼ,xᵢ] = (yⱼ==state) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] * μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
 
                 full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, logzj, dj))
+
                 b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
                 normb = normalization_uf(b)
-                logz += normb
-                der += (2*state-3)*exp(logz + logzj - logzᵢ)
+
+                der += (2*state-3)*exp(logz + normb - logzᵢ)
             end
             Bj[s] = Bjsold
         end
@@ -125,7 +127,7 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
 end
 
 # computes derivatives of the log-likelihood with respect to recovery rate
-function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
+function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6)) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
     @unpack g, w, ϕ, ψ, μ = bp
     T = getT(bp)
     ein, eout = inedges(g,i), outedges(g,i)
@@ -138,13 +140,12 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
 
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
-    logzᵢ += normalize!(bᵢ)
+    zᵢ = exp(logzᵢ + normalize!(bᵢ))
 
     ρder = 0.0
     for s in 1:T
         q = length(ϕᵢ[1])
         B = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]   # can remove the qj=1 (and also all dependences on xⱼᵗ afterwards)?
-        # the following for can be avoided by precomputing
         for t in 1:T
             fullᵗ,Bᵗ = full[t], B[t]
             W = zeros(q,q,1,size(fullᵗ,3))
@@ -163,7 +164,7 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
         ρder += normalization(b)*exp(logzᵢ)
     end
 
-    return sign(ρder) * exp(log(abs(ρder)) - logzᵢ) + logpriorder(wᵢ[1].ρ)
+    return ρder/zᵢ
 end
 
 
