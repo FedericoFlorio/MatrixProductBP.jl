@@ -2,70 +2,6 @@ const SUSCEPTIBLE = 1
 const INFECTIOUS = 2
 
 
-# a set of functions to normalize tensor trains and avoid unerflow
-trace(At) = @tullio _[aᵗ,aᵗ⁺¹] := reshape(At, size(At,1), size(At,2), :)[aᵗ,aᵗ⁺¹,x]
-
-function accumulate_L_uf(A::AbstractTensorTrain)
-    L = Matrix(I, size(A[begin],1), size(A[begin],1))
-    z = sum(abs,L)
-    L /= z
-    logz = log(z)
-    for At in A
-        L = L * trace(At)
-        z = sum(abs,L)
-        z==0 && return -Inf
-        L /= z
-        logz += log(z)
-    end
-    tr(L[end]) ≤ 0 && return -Inf
-    logz
-end
-
-function accumulate_R_uf(A::AbstractTensorTrain)
-    R = Matrix(I, size(A[end],2), size(A[end],2))
-    z = sum(abs,R)
-    R /= z
-    logz = log(z)
-    for At in A
-        R = trace(At) * R
-        z = sum(abs,R)
-        z==0 && return -Inf
-        R /= z
-        logz += log(z)
-    end
-    tr(R[end]) ≤ 0 && return -Inf
-    logz
-end
-
-function normalization_uf(A::AbstractTensorTrain)
-    lz = accumulate_L_uf(A)
-    @debug let lzr = accumulate_R_uf(A)
-        @assert log(tr(R[begin])) + lzr ≈ logz "z=$z, got $(tr(r[begin])), A=$A"  # sanity check
-    end
-    return lz
-end
-
-function normalize_eachmatrix_uf!(A::AbstractTensorTrain)
-    c = 0.0
-    for m in A
-        mm = maximum(abs, m)
-        if !any(isnan, mm) && !any(isinf, mm) && !any(iszero, mm)
-            m ./= mm
-            c += log(mm)
-        end
-    end
-    c
-end
-
-function normalize_uf!(A::AbstractTensorTrain)
-    c = normalize_eachmatrix_uf!(A)
-    logZ = normalization_uf(A)
-
-
-    
-    logZ + c
-end
-
 # compute derivatives of the log-likelihood with respect to infection rates of incoming edges
 function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
     @unpack g, w, ϕ, ψ, μ = bp
@@ -139,32 +75,34 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
 
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
-    zᵢ = exp(logzᵢ + normalize!(bᵢ))
+    zᵢ = exp(Logarithmic, normalize!(bᵢ))
 
-    ρder = 0.0
+    q = length(ϕᵢ[1])
+    A = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]
+    As = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]
+    for t in 1:T
+        fullᵗ,Aᵗ,Asᵗ = full[t], A[t], As[t]
+        W = zeros(q,q,1,size(fullᵗ,3))
+
+        @tullio avx=false W[xᵢᵗ⁺¹,INFECTIOUS,xⱼᵗ,yᵗ] = ((xᵢᵗ⁺¹==SUSCEPTIBLE)-(xᵢᵗ⁺¹==INFECTIOUS)) * ϕᵢ[$t][INFECTIOUS]
+        @tullio Asᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] * fullᵗ[m,n,yᵗ,xᵢᵗ]
+
+        @tullio avx=false W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] = prob_y(wᵢ[$t],xᵢᵗ⁺¹,xᵢᵗ,yᵗ,1) * ϕᵢ[$t][xᵢᵗ]
+        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] * fullᵗ[m,n,yᵗ,xᵢᵗ]
+    end
+    fullᵀ,Aᵀ = full[end], A[end]
+    @tullio Aᵀ[m,n,xᵢᵀ,xⱼᵀ,xᵢᵀ⁺¹] = fullᵀ[m,n,yᵀ,xᵢᵀ] * ϕᵢ[end][xᵢᵀ]
+    any(any(isnan, a) for a in A) && @error "NaN in tensor train"
+    any(any(isnan, a) for a in A) && @error "NaN in tensor train"
+
+    ρder = Logarithmic(0.0)
     for s in 1:T
-        q = length(ϕᵢ[1])
-        B = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]   # can remove the qj=1 (and also all dependences on xⱼᵗ afterwards)?
-        # the following for can be avoided by precomputing
-        for t in 1:T
-            fullᵗ,Bᵗ = full[t], B[t]
-            W = zeros(q,q,1,size(fullᵗ,3))
-            if t==s
-                @tullio avx=false W[xᵢᵗ⁺¹,INFECTIOUS,xⱼᵗ,yᵗ] = ((xᵢᵗ⁺¹==SUSCEPTIBLE)-(xᵢᵗ⁺¹==INFECTIOUS)) * ϕᵢ[$t][INFECTIOUS]
-            else
-                @tullio avx=false W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] = prob_y(wᵢ[$t],xᵢᵗ⁺¹,xᵢᵗ,yᵗ,1) * ϕᵢ[$t][xᵢᵗ]
-            end
-            @tullio Bᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] * fullᵗ[m,n,yᵗ,xᵢᵗ]
-        end
-        fullᵀ,Bᵀ = full[end], B[end]
-        @tullio Bᵀ[m,n,xᵢᵀ,xⱼᵀ,xᵢᵀ⁺¹] = fullᵀ[m,n,yᵀ,xᵢᵀ] * ϕᵢ[end][xᵢᵀ]
-        any(any(isnan, b) for b in B) && @error "NaN in tensor train"
-
+        B = [A[1:s-1]...,As[s],A[s+1:end]...]
         b = MPEM3(B) |> mpem2
-        ρder += normalization(b)*exp(logzᵢ)
+        ρder += normalization(b)
     end
 
-    return ρder/zᵢ
+    return float(ρder/zᵢ)
 end
 
 
