@@ -84,7 +84,6 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
             @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
             @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
         end |> M2
-
         any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
         compress!(B12; svd_trunc)
         lz = normalize!(B12)
@@ -103,31 +102,31 @@ function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
         μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
         (Bj,logzj,dj) = B[j]
         
-        der = 0.0
+        der = Logarithmic(0.0)
         for s in 1:T
             μⱼᵢˢ, ψᵢⱼˢ = μⱼᵢ[s], ψᵢⱼ[s]
             Bjs = Bj[s]
             Bjsold = copy(Bjs)
-            for state in [INFECTIOUS, SUSCEPTIBLE]
-                @tullio Bjs[m,n,yⱼ,xᵢ] = (yⱼ==state) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] *  μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
-                
-                full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, 0.0, 1))
-                b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
-                normb = normalization(b)
-                logz += normb
-                der += (2*state-3)*exp(logz + logzj - logzᵢ)
-            end
+
+            @tullio Bjs[m,n,yⱼ,xᵢ] = ((yⱼ==INFECTIOUS)-(yⱼ==SUSCEPTIBLE)) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] * μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
+            
+            full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, logzj, 1))
+            b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
+            b.z *= exp(Logarithmic,-logz) * full.z
+            normb = normalization(b)
+            der += normb
+
             Bj[s] = Bjsold
         end
 
-        λder[j] = der + logpriorder(wᵢ[1].λ[j])
+        λder[j] = der * exp(Logarithmic,-logzᵢ) + logpriorder(wᵢ[1].λ[j])
     end
 
     return λder
 end
 
 # computes derivatives of the log-likelihood with respect to recovery rate
-function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
+function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6)) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
     @unpack g, w, ϕ, ψ, μ = bp
     T = getT(bp)
     ein, eout = inedges(g,i), outedges(g,i)
@@ -140,13 +139,12 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
 
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
-    logzᵢ += normalize!(bᵢ)
+    zᵢ = exp(logzᵢ + normalize!(bᵢ))
 
     ρder = 0.0
     for s in 1:T
         q = length(ϕᵢ[1])
         B = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]   # can remove the qj=1 (and also all dependences on xⱼᵗ afterwards)?
-        # the following for can be avoided by precomputing
         for t in 1:T
             fullᵗ,Bᵗ = full[t], B[t]
             W = zeros(q,q,1,size(fullᵗ,3))
@@ -165,7 +163,7 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
         ρder += normalization(b)*exp(logzᵢ)
     end
 
-    return sign(ρder) * exp(log(abs(ρder)) - logzᵢ) + logpriorder(wᵢ[1].ρ)
+    return ρder/zᵢ
 end
 
 
