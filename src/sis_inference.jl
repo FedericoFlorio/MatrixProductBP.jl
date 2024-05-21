@@ -14,33 +14,34 @@ logpriorder::Function=(x)->0.0, probys::Tuple=()) where {G<:AbstractIndexedDiGra
     μin = μ[ein.|>idx]
     ψout = ψ[eout.|>idx]
 
-    function op((B1, lz1, d1), (B2, lz2, d2))
-        B12 = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
+    function op((B1, d1), (B2, d2))
+        BB = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
             Pyy = zeros(nstates(wᵢᵗ,d1+d2), size(B₁ᵗ,3), size(B₂ᵗ,3), size(B₁ᵗ,4))
-            @tullio avx=false Pyy[y,y1,y2,xᵢ] = prob_yy(wᵢᵗ,y,y1,y2,xᵢ,d1,d2)
+            @tullio avx=false Pyy[y,y1,y2,xᵢ] = prob_yy(wᵢᵗ,y,y1,y2,xᵢ,d1,d2) 
             @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
             @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
-        end |> M2
-        any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
-        compress!(B12; svd_trunc)
-        lz = normalize!(B12)
-        any(any(isnan, b) for b in B12) && @error "NaN in tensor train"
-        B12, lz + lz1 + lz2, d1 + d2
+        end
+        BB = M2(BB; z = B1.z * B2.z)
+        any(any(isnan, b) for b in BB) && @error "NaN in tensor train"
+        compress!(BB; svd_trunc)
+        normalize_eachmatrix!(BB)    # keep this one?
+        any(any(isnan, b) for b in BB) && @error "NaN in tensor train"
+        BB, d1 + d2
     end
 
     if isempty(probys)
-        C, full, logzᵢ, sumlogzᵢ₂ⱼ, B, logzs = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
+        C, full, B = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
         Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
         bᵢ = Bᵢ |> mpem2 |> marginalize
         zᵢ = exp(Logarithmic, normalize!(bᵢ))
     else
-        (C, logzᵢ, zᵢ, B, logzs) = probys
+        (C, zᵢ, B) = probys
     end
 
     λder = zeros(length(ein))
     for j in eachindex(ein)
         μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
-        (Bj,logzj,dj) = B[j]
+        (Bj,dj) = B[j]
         
         der = Logarithmic(0.0)
         for s in 1:T
@@ -50,16 +51,15 @@ logpriorder::Function=(x)->0.0, probys::Tuple=()) where {G<:AbstractIndexedDiGra
 
             @tullio Bjs[m,n,yⱼ,xᵢ] = ((yⱼ==INFECTIOUS)-(yⱼ==SUSCEPTIBLE)) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] * μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
             
-            full, logz = op((C[j], logzs[j], dᵢ-1), (Bj, logzj, 1))
+            full, = op((C[j], dᵢ-1), (Bj, 1))
             b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
-            b.z *= exp(Logarithmic,-logz) * full.z
             normb = normalization(b)
             der += normb
 
             Bj[s] = Bjsold
         end
 
-        λder[j] = der * exp(Logarithmic,-logzᵢ) / zᵢ + logpriorder(wᵢ[1].λ[j])
+        λder[j] = der / zᵢ + logpriorder(wᵢ[1].λ[j])
     end
 
     return λder
@@ -77,7 +77,7 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     ψout = ψ[eout.|>idx]
 
     if isempty(probys)
-        C, full, logzᵢ, sumlogzᵢ₂ⱼ, B, logzs = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
+        C, full, B, = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
         Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
         bᵢ = Bᵢ |> mpem2 |> marginalize
         zᵢ = exp(Logarithmic, normalize!(bᵢ))
@@ -107,7 +107,7 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     for s in 1:T
         B = [A[1:s-1]...,As[s],A[s+1:end]...]
         b = MPEM3(B) |> mpem2
-        ρder += normalization(b)
+        ρder += normalization(b) / full.z
     end
 
     return float(ρder/zᵢ)
@@ -121,13 +121,12 @@ function derivatives(bp::MPBP{G,F}, i::Integer; svd_trunc::SVDTrunc=TruncThresh(
     μin = μ[ein.|>idx]
     ψout = ψ[eout.|>idx]
 
-
-    C, full, logzᵢ, sumlogzᵢ₂ⱼ, B, logzs = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
+    C, full, B = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
     Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bᵢ = Bᵢ |> mpem2 |> marginalize
     zᵢ = exp(Logarithmic, normalize!(bᵢ))
 
-    λder = der_λ(bp, i, eltype(bp.w[i]); svd_trunc, logpriorder, probys=(C,logzᵢ,zᵢ,B,logzs))
+    λder = der_λ(bp, i, eltype(bp.w[i]); svd_trunc, logpriorder, probys=(C,zᵢ,B))
     ρder = der_ρ(bp, i, eltype(bp.w[i]); svd_trunc, logpriorder, probys=(full,zᵢ))
 
     return λder, ρder
@@ -258,12 +257,10 @@ function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, 
     for iter in 1:maxiter
         Threads.@threads for i in nodes
             onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp=0.0)
-            # jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/trace_error/bp_it$(iter)_node$(i)_bp.jld2"; bp)
         end
 
         Threads.@threads for i in nodes
             stepga!(bp, i, λstep, ρstep; method, svd_trunc, logpriorder, progress=iter/maxiter)
-            # jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/trace_error/bp_it$(iter)_node$(i)_ga.jld2"; bp)
         end
 
         Δ = cb_inf(bp,iter,svd_trunc)
