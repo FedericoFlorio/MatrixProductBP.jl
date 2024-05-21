@@ -66,7 +66,6 @@ export
     RecursiveBPFactor, DampedFactor, RecursiveTraceFactor, GenericFactor,
     RestrictedRecursiveBPFactor,
     der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!,
-    accumulate_L_uf, accumulate_R_uf, normalization_uf, normalize_eachmatrix_uf!, normalize_uf!
     mpbp_stationary, mpbp_stationary_infinite_graph, mpbp_stationary_infinite_bipartite_graph,
     CB_BPVUMPS, TruncVUMPS,
     mean_with_uncertainty
