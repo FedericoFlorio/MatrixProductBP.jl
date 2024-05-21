@@ -57,8 +57,7 @@ export
     draw_node_observations!, AtomicVector,
     RecursiveBPFactor, DampedFactor, RecursiveTraceFactor, GenericFactor,
     RestrictedRecursiveBPFactor,
-    der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!,
-    accumulate_L_uf, accumulate_R_uf, normalization_uf, normalize_eachmatrix_uf!, normalize_uf!
+    der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!
 
 
 include("utils.jl")
