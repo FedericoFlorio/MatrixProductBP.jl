@@ -11,7 +11,7 @@ include("/home/fedflorio/master_thesis/Utilities/roc.jl")
 A = readdlm("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/karate.txt", Bool)
 g = IndexedGraph(A)
 
-nsnaps = 200
+nsnaps = 100
 separation = 2
 T = nsnaps * separation
 N = nv(g)
@@ -58,7 +58,7 @@ maxiter = 40
 iters, cb = inference_parameters!(bp_inf, method=31, maxiter=maxiter, λstep=0.01, ρstep=0.01, logpriorder=(x)->0.0)
 
 data = cb.data[end]
-xplot, yplot, auc = roc(cb.data[end].λ, λ)
-jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/sis_inference_data/karate_snaps_step2_nobs200.jld2"; data, λ)
+xplot, yplot, auc = roccurve(cb.data[end].λ, λ)
+jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/sis_inference_data/karate_snaps_step2_nobs100.jld2"; data, λ)
 
 @show auc
