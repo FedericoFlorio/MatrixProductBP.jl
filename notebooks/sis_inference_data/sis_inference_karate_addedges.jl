@@ -11,8 +11,8 @@ using JLD2
 A = readdlm("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/karate.txt", Bool)
 g = IndexedGraph(A)
 
-nsnaps = 100
-separation = 32
+nsnaps = 400
+separation = 16
 T = nsnaps * separation
 N = nv(g)
 seed = 4
@@ -44,14 +44,14 @@ X, observed = draw_node_observations!(bp_obs, nobs, times = obs_times .+ 1, soft
 λinit = 1e-12
 ρinit = 1e-12
 
-A_complete = ones(N,N) - I
-g_complete = IndexedGraph(A_complete)
-λ_complete = sparse(λinit.*A_complete)
-ρ_complete = fill(ρinit, N)
+A_add = readdlm("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/sis_inference_data/karate_add.txt", Bool)
+g_add = IndexedGraph(A_add)
+λ_add = sparse(λinit.*A_add)
+ρ_add = fill(ρinit, N)
 
 bp_inf = map(1:nsnaps-1) do i
     obs_sub = [sis.ϕ[a][(i-1)*separation+1:i*separation+1] for a in eachindex(sis.ϕ)]
-    sis_inf = SIS_heterogeneous(g_complete, λ_complete, ρ_complete, separation; γ, ϕ=obs_sub)
+    sis_inf = SIS_heterogeneous(g_add, λ_add, ρ_add, separation; γ, ϕ=obs_sub)
     bp = mpbp(sis_inf)
 end
 
@@ -61,7 +61,7 @@ maxiter = 30
 
 nodes = vertices(bp_obs.g)
 
-λder = [zeros(length(nodes)-1) for n in nodes]
+λder = [zeros(length(neighbors(g_add,n))) for n in nodes]
 ρder = zeros(length(nodes))
 params_history = []
 
@@ -105,6 +105,6 @@ for it in 1:maxiter
     data = MatrixProductBP.save_data(bp_inf[1])
     push!(params_history, data)
     
-    jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/sis_inference_data/sigmoid_karate_snaps_step$(separation)_nobs$(nsnaps).jld2"; params_history, data, λ)
+    jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/sis_inference_data/sigmoid_karate_add_snaps_step$(separation)_nobs$(nsnaps).jld2"; params_history, data, λ)
     println("iteration $(it) completed")
 end
