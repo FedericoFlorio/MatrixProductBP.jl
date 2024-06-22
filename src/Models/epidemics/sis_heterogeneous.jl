@@ -40,7 +40,6 @@ function SIS_heterogeneous(λ::SparseMatrixCSC{F,Int64}, ρ::Vector{F}, T::Int; 
     return SIS_heterogeneous(g, λ, ρ, T; γ, α)
 end
 
-# WARNING! The λs are all bound together
 function sis_heterogeneous_factors(sis::SIS_heterogeneous{T,N,F}) where {T,N,F}
-    [[SIS_heterogeneousFactor(nonzeros(sis.λ)[nzrange(sis.λ,i)], sis.ρ[i]; α=sis.α[i]) for _ in 1:T+1] for i in vertices(sis.g)]
+    [[deepcopy(SIS_heterogeneousFactor(nonzeros(sis.λ)[nzrange(sis.λ,i)], sis.ρ[i]; α=sis.α[i])) for _ in 1:T+1] for i in vertices(sis.g)]
 end

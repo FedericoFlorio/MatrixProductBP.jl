@@ -2,20 +2,23 @@ using Pkg
 Pkg.activate("/home/fedflorio/master_thesis/")
 
 using MatrixProductBP, MatrixProductBP.Models
-using Graphs, IndexedGraphs, Statistics, Random, LinearAlgebra, PyPlot, DelimitedFiles
+using Graphs, IndexedGraphs, Statistics, Random, LinearAlgebra, PyPlot, DelimitedFiles, SpecialFunctions
 import ProgressMeter; ProgressMeter.ijulia_behavior(:clear)
 using TensorTrains: summary_compact
 using SparseArrays
 using JLD2
+include("/home/fedflorio/master_thesis/Utilities/roc.jl")
 
-A = readdlm("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/karate.txt", Bool)
-g = IndexedGraph(A)
 
 nsnaps = 100
-separation = 32
+separation = 12
 T = nsnaps * separation
-N = nv(g)
+N = 10
 seed = 4
+
+c = 2
+gg = erdos_renyi(N, c/N; seed)
+g = IndexedGraph(gg)
 
 λ_unif = 0.02
 ρ_unif = 0.02
@@ -29,20 +32,23 @@ end
 λ = sparse(λ)
 # ρ = rand(N)
 ρ = fill(ρ_unif,N)
-γ = [i==1 ? 1.0 : 0.0 for i in 1:N]
+# γ = [i==4 ? 1.0 : 0.0 for i in 1:N]
+γ = 0.2
+α = fill(1e-4,N)
 
-sis = SIS_heterogeneous(λ, ρ, T; γ)
+sis = SIS_heterogeneous(λ, ρ, T; γ, α)
 bp_obs = mpbp(sis)
 
-obs_times = collect(range(separation, step=separation, length=nsnaps))
+obs_times = collect(range(0, step=separation, length=nsnaps))
 nobs = floor(Int, N * length(obs_times) * 1.0)
 obs_fraction = nobs / N
+seed = 3
 rng = MersenneTwister(seed)
-X, observed = draw_node_observations!(bp_obs, nobs, times = obs_times .+ 1, softinf=Inf; rng)
+X, observed = draw_node_observations!(bp_obs, nsnaps, times = obs_times .+ 1, softinf=Inf; rng)
 
 
-λinit = 1e-12
-ρinit = 1e-12
+λinit = 0.1
+ρinit = 0.1
 
 A_complete = ones(N,N) - I
 g_complete = IndexedGraph(A_complete)
@@ -66,8 +72,8 @@ nodes = vertices(bp_obs.g)
 params_history = []
 
 for it in 1:maxiter
-    λstep = 0.01 * 3^(it≤(maxiter/4))
-    ρstep = 0.01 * 3^(it≤(maxiter/4))
+    λstep = 0.5 * 3^(it≤(maxiter/4))
+    ρstep = 0.5 * 3^(it≤(maxiter/4))
     for el in λder
         el .= 0.0
     end
@@ -90,14 +96,14 @@ for it in 1:maxiter
             wᵢ = bp_inf[k].w[i]
             dᵢ = length(inedges(bp_inf[k].g,i))
             for t in eachindex(wᵢ)
-                wᵢ[t].λ .+= λstep .* tanh.(0.5.*λder[i]) #.* wᵢ[t].λ
-                wᵢ[t].ρ += ρstep * tanh(0.5*ρder[i]) #* wᵢ[t].ρ
+                wᵢ[t].λ .+= λstep .* erf.(0.5.*λder[i]) #.* wᵢ[t].λ
+                wᵢ[t].ρ += ρstep * erf(0.5*ρder[i]) #* wᵢ[t].ρ
             end
             for t in eachindex(wᵢ)
                 for j in 1:dᵢ
-                    wᵢ[t].λ[j] = clamp(wᵢ[t].λ[j], 1e-9, 1-1e-9)
+                    wᵢ[t].λ[j] = clamp(wᵢ[t].λ[j], 1e-6, 1-1e-6)
                 end
-                wᵢ[t].ρ = clamp(wᵢ[t].ρ, 1e-9, 1-1e-9)
+                wᵢ[t].ρ = clamp(wᵢ[t].ρ, 1e-6, 1-1e-6)
             end
         end
     end
@@ -105,6 +111,6 @@ for it in 1:maxiter
     data = MatrixProductBP.save_data(bp_inf[1])
     push!(params_history, data)
     
-    jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/sis_inference_data/sigmoid_karate_snaps_step$(separation)_nobs$(nsnaps).jld2"; params_history, data, λ)
+    jldsave("/home/fedflorio/master_thesis/MatrixProductBP.jl/notebooks/sis_inference_data/sigmoid_rand$(N)_snaps_step$(separation)_nobs$(nsnaps).jld2"; params_history, data, λ)
     println("iteration $(it) completed")
 end
