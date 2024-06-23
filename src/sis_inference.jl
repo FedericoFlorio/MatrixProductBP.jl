@@ -1,6 +1,45 @@
 const SUSCEPTIBLE = 1
 const INFECTIOUS = 2
 
+function acc_L(A::MPEM3; normalize=true)
+    Lt = [(m==n) for m in 1:size(A[begin],1), n in 1:size(A[begin],1), x in 1:size(A[begin],3)]
+    z = Logarithmic(1.0)
+    z_acc = zeros(Logarithmic, length(A))
+    L = map(enumerate(A)) do (t,At)
+        nt = maximum(abs, Lt)
+        if !iszero(nt) && normalize
+            Lt ./= nt
+            z *= nt
+        end
+        t>1 && (z_acc[t-1] = z)
+        @tullio Ltdummy[i,k,xᵗ⁺¹] := Lt[i,j,xᵗ] * At[j,k,xᵗ,xⱼ,xᵗ⁺¹]
+        Lt = Ltdummy
+    end
+    z_acc[end] = Logarithmic(tr(Lt[:,:,1]))*z
+    
+    return L, z_acc
+end
+
+function acc_R(A::MPEM3; normalize=true)
+    q = size(A[end],3)
+    Rt = [(m==n)/q for m in 1:size(A[end],2), n in 1:size(A[end],2), x in 1:q]
+    z = Logarithmic(1.0)
+    T = length(A)
+    z_acc = zeros(Logarithmic, T)
+    R = map(enumerate(Iterators.reverse(A))) do (t,At)
+        nt = maximum(abs, Rt)
+        if !iszero(nt) && normalize
+            Rt ./= nt
+            z *= nt
+        end
+        t>1 && (z_acc[T+2-t] = z)
+        @tullio Rtdummy[i,k,xᵗ] := At[i,j,xᵗ,xⱼ,xᵗ⁺¹] * Rt[j,k,xᵗ⁺¹]
+        Rt = Rtdummy
+    end |> reverse
+    z_acc[1] = Logarithmic(sum(tr(Rt[:,:,x]) for x in axes(Rt,3))) * z
+
+    return R, z_acc
+end
 
 # compute derivatives of the log-likelihood with respect to infection rates of incoming edges
 function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), 
@@ -14,65 +53,10 @@ logpriorder::Function=(x)->0.0, probys::Tuple=()) where {G<:AbstractIndexedDiGra
     μin = μ[ein.|>idx]
     ψout = ψ[eout.|>idx]
 
-    function op((B1, d1), (B2, d2))
-        BB = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
-            Pyy = zeros(nstates(wᵢᵗ,d1+d2), size(B₁ᵗ,3), size(B₂ᵗ,3), size(B₁ᵗ,4))
-            @tullio avx=false Pyy[y,y1,y2,xᵢ] = prob_yy(wᵢᵗ,y,y1,y2,xᵢ,d1,d2) 
-            @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
-            @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
-        end
-        BB = M2(BB; z = B1.z * B2.z)
-        any(any(isnan, b) for b in BB) && @error "NaN in tensor train"
-        compress!(BB; svd_trunc)
-        normalize_eachmatrix!(BB)    # keep this one?
-        any(any(isnan, b) for b in BB) && @error "NaN in tensor train"
-        BB, d1 + d2
-    end
-
     function opt((B1ᵗ,d1),(B2ᵗ,d2),Pyy,wᵢᵗ)
         @tullio avx=false Pyy[y,y1,y2,xᵢ] = prob_yy(wᵢᵗ,y,y1,y2,xᵢ,d1,d2) 
         @tullio BB[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B1ᵗ[m1,n1,y1,xᵢ] * B2ᵗ[m2,n2,y2,xᵢ]
         @cast _[(m1,m2),(n1,n2),y,xᵢ] := BB[m1,m2,n1,n2,y,xᵢ]
-    end
-
-    function acc_L(A::MPEM3; normalize=true)
-        Lt = [(m==n) for m in 1:size(A[begin],1), n in 1:size(A[begin],1), x in 1:size(A[begin],3)]
-        z = Logarithmic(1.0)
-        z_acc = zeros(Logarithmic, length(A))
-        L = map(enumerate(A)) do (t,At)
-            nt = maximum(abs, Lt)
-            if !iszero(nt) && normalize
-                Lt ./= nt
-                z *= nt
-            end
-            t>1 && (z_acc[t-1] = z)
-            @tullio Ltdummy[i,k,xᵗ⁺¹] := Lt[i,j,xᵗ] * At[j,k,xᵗ,xⱼ,xᵗ⁺¹]
-            Lt = Ltdummy
-        end
-        z_acc[end] = Logarithmic(tr(Lt[:,:,1]))*z
-        
-        return L, z_acc
-    end
-    
-    function acc_R(A::MPEM3; normalize=true)
-        q = size(A[end],3)
-        Rt = [(m==n)/q for m in 1:size(A[end],2), n in 1:size(A[end],2), x in 1:q]
-        z = Logarithmic(1.0)
-        TT = length(A)
-        z_acc = zeros(Logarithmic, TT)
-        R = map(enumerate(Iterators.reverse(A))) do (t,At)
-            nt = maximum(abs, Rt)
-            if !iszero(nt) && normalize
-                Rt ./= nt
-                z *= nt
-            end
-            t>1 && (z_acc[TT+2-t] = z)
-            @tullio Rtdummy[i,k,xᵗ] := At[i,j,xᵗ,xⱼ,xᵗ⁺¹] * Rt[j,k,xᵗ⁺¹]
-            Rt = Rtdummy
-        end |> reverse
-        z_acc[1] = Logarithmic(sum(tr(Rt[:,:,x]) for x in axes(Rt,3))) * z
-    
-        return R, z_acc
     end
 
     if isempty(probys)
@@ -89,8 +73,6 @@ logpriorder::Function=(x)->0.0, probys::Tuple=()) where {G<:AbstractIndexedDiGra
         μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
         (Bj,_) = B[j]
         Cj = C[j]
-
-        ##################################################################
 
         q = length(ϕᵢ[1])
         X = [zeros(size(b,1), size(b,2), q, 1, q) for b in Bj]
@@ -128,8 +110,6 @@ logpriorder::Function=(x)->0.0, probys::Tuple=()) where {G<:AbstractIndexedDiGra
         (L,zL) = acc_L(X0)
         (R,zR) = acc_R(X0)
 
-        #################################################################
-
         der = Logarithmic(0.0)
         for s in 2:T
             LL = L[s-1]
@@ -138,7 +118,6 @@ logpriorder::Function=(x)->0.0, probys::Tuple=()) where {G<:AbstractIndexedDiGra
             @tullio M[i,l] := LL[i,j,x] * XXs[j,k,x,xⱼ,y] * RR[k,l,y]
             Z = only(M) * zL[s-1] * zR[s+1]
             der += Z
-            # @show der
         end
         Xs1 = Xs[1]
         R2 = R[2]
@@ -146,79 +125,14 @@ logpriorder::Function=(x)->0.0, probys::Tuple=()) where {G<:AbstractIndexedDiGra
         Xsend = Xs[end]
         @tullio M[j,l] := Xs1[j,k,x,xⱼ,y] * R2[k,l,y]  # s=1
         der += only(M) * zR[2]
-        # @show der
         @tullio M[i,k] := Lend[i,j,x] * Xsend[j,k,x,xⱼ,y]  # s=T+1
         der += only(M) * zL[end-1]
-        # @show der
 
         λder[j] = der / Cj.z / zᵢ + logpriorder(wᵢ[1].λ[j])
     end
 
     return λder
 end
-
-#old function
-# function der_λ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), 
-#     logpriorder::Function=(x)->0.0, probys::Tuple=()) where {G<:AbstractIndexedDiGraph, F<:Real, U<:RecursiveBPFactor}
-#         @unpack g, w, ϕ, ψ, μ = bp
-#         M2 = eltype(μ)
-#         T = getT(bp)
-#         ein, eout = inedges(g,i), outedges(g,i)
-#         wᵢ, ϕᵢ, dᵢ  = w[i], ϕ[i], length(ein)
-#         qi = nstates(bp,i)
-#         μin = μ[ein.|>idx]
-#         ψout = ψ[eout.|>idx]
-    
-#         function op((B1, d1), (B2, d2))
-#             BB = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
-#                 Pyy = zeros(nstates(wᵢᵗ,d1+d2), size(B₁ᵗ,3), size(B₂ᵗ,3), size(B₁ᵗ,4))
-#                 @tullio avx=false Pyy[y,y1,y2,xᵢ] = prob_yy(wᵢᵗ,y,y1,y2,xᵢ,d1,d2) 
-#                 @tullio B3[m1,m2,n1,n2,y,xᵢ] := Pyy[y,y1,y2,xᵢ] * B₁ᵗ[m1,n1,y1,xᵢ] * B₂ᵗ[m2,n2,y2,xᵢ]
-#                 @cast _[(m1,m2),(n1,n2),y,xᵢ] := B3[m1,m2,n1,n2,y,xᵢ]
-#             end
-#             BB = M2(BB; z = B1.z * B2.z)
-#             any(any(isnan, b) for b in BB) && @error "NaN in tensor train"
-#             compress!(BB; svd_trunc)
-#             normalize_eachmatrix!(BB)    # keep this one?
-#             any(any(isnan, b) for b in BB) && @error "NaN in tensor train"
-#             BB, d1 + d2
-#         end
-    
-#         if isempty(probys)
-#             C, full, B = compute_prob_ys(wᵢ, qi, μin, ψout, T, svd_trunc)
-#             Bᵢ = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
-#             bᵢ = Bᵢ |> mpem2 |> marginalize
-#             zᵢ = exp(Logarithmic, normalize!(bᵢ))
-#         else
-#             (C, zᵢ, B) = probys
-#         end
-    
-#         λder = zeros(length(ein))
-#         for j in eachindex(ein)
-#             μⱼᵢ, ψᵢⱼ = μin[j], ψout[j]
-#             (Bj,dj) = B[j]
-            
-#             der = Logarithmic(0.0)
-#             for s in 1:T
-#                 μⱼᵢˢ, ψᵢⱼˢ = μⱼᵢ[s], ψᵢⱼ[s]
-#                 Bjs = Bj[s]
-#                 Bjsold = copy(Bjs)
-    
-#                 @tullio Bjs[m,n,yⱼ,xᵢ] = ((yⱼ==INFECTIOUS)-(yⱼ==SUSCEPTIBLE)) * ψᵢⱼˢ[xᵢ,$INFECTIOUS] * μⱼᵢˢ[m,n,$INFECTIOUS,xᵢ]
-                
-#                 full, = op((C[j], dᵢ-1), (Bj, 1))
-#                 b = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ) |> mpem2
-#                 normb = normalization(b)
-#                 der += normb
-    
-#                 Bj[s] = Bjsold
-#             end
-    
-#             λder[j] = der / zᵢ + logpriorder(wᵢ[1].λ[j])
-#         end
-    
-#         return λder
-#     end
 
 # computes derivatives of the log-likelihood with respect to recovery rate
 function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncThresh(1e-6), 
@@ -241,31 +155,42 @@ function der_ρ(bp::MPBP{G,F}, i::Integer, ::Type{U}; svd_trunc::SVDTrunc=TruncT
     end
 
     q = length(ϕᵢ[1])
-    A = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]
-    As = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]
+    X = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]
+    Xs = [zeros(size(a,1), size(a,2), q, 1, q) for a in full]
     for t in 1:T
-        fullᵗ,Aᵗ,Asᵗ = full[t], A[t], As[t]
+        fullᵗ,Xᵗ,Xsᵗ = full[t], X[t], Xs[t]
         W = zeros(q,q,1,size(fullᵗ,3))
 
         @tullio avx=false W[xᵢᵗ⁺¹,INFECTIOUS,xⱼᵗ,yᵗ] = ((xᵢᵗ⁺¹==SUSCEPTIBLE)-(xᵢᵗ⁺¹==INFECTIOUS)) * ϕᵢ[$t][INFECTIOUS]
-        @tullio Asᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] * fullᵗ[m,n,yᵗ,xᵢᵗ]
+        @tullio Xsᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] * fullᵗ[m,n,yᵗ,xᵢᵗ]
 
         @tullio avx=false W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] = prob_y(wᵢ[$t],xᵢᵗ⁺¹,xᵢᵗ,yᵗ,1) * ϕᵢ[$t][xᵢᵗ]
-        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] * fullᵗ[m,n,yᵗ,xᵢᵗ]
+        @tullio Xᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = W[xᵢᵗ⁺¹,xᵢᵗ,xⱼᵗ,yᵗ] * fullᵗ[m,n,yᵗ,xᵢᵗ]
     end
-    fullᵀ,Aᵀ = full[end], A[end]
-    @tullio Aᵀ[m,n,xᵢᵀ,xⱼᵀ,xᵢᵀ⁺¹] = fullᵀ[m,n,yᵀ,xᵢᵀ] * ϕᵢ[end][xᵢᵀ]
-    any(any(isnan, a) for a in A) && @error "NaN in tensor train"
-    any(any(isnan, a) for a in A) && @error "NaN in tensor train"
+    fullᵀ,Xᵀ,Xsᵀ = full[end], X[end], Xs[end]
+    @tullio Xᵀ[m,n,xᵢᵀ,xⱼᵀ,xᵢᵀ⁺¹] = fullᵀ[m,n,yᵀ,xᵢᵀ] * ϕᵢ[end][xᵢᵀ]
+    any(any(isnan, x) for x in X) && @error "NaN in tensor train"
+    any(any(isnan, x) for x in Xs) && @error "NaN in tensor train"
+
+    X0 = MPEM3(X)
+    (L,zL) = acc_L(X0)
+    (R,zR) = acc_R(X0)
 
     ρder = Logarithmic(0.0)
-    for s in 1:T
-        B = [A[1:s-1]...,As[s],A[s+1:end]...]
-        b = MPEM3(B) |> mpem2
-        ρder += normalization(b) / full.z
+    for s in 2:T
+        LL = L[s-1]
+        RR = R[s+1]
+        XXs = Xs[s]
+        @tullio M[i,l] := LL[i,j,x] * XXs[j,k,x,xⱼ,y] * RR[k,l,y]
+        Z = only(M) * zL[s-1] * zR[s+1]
+        ρder += Z
     end
+    Xs1 = Xs[1]
+    R2 = R[2]
+    @tullio M[j,l] := Xs1[j,k,x,xⱼ,y] * R2[k,l,y]  # s=1
+    ρder += only(M) * zR[2]
 
-    return float(ρder/zᵢ)
+    return float(ρder / full.z / zᵢ)
 end
 
 function derivatives(bp::MPBP{G,F}, i::Integer; svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0) where {G<:AbstractIndexedDiGraph,F<:Real}
