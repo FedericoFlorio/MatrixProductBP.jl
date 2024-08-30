@@ -207,6 +207,7 @@ function derivatives(bp::MPBP{G,F}, i::Integer; svd_trunc::SVDTrunc=TruncThresh(
     zᵢ = exp(Logarithmic, normalize!(bᵢ))
 
     λder = der_λ(bp, i, eltype(bp.w[i]); svd_trunc, logpriorder, probys=(C,zᵢ,B))
+    
     ρder = der_ρ(bp, i, eltype(bp.w[i]); svd_trunc, logpriorder, probys=(full,zᵢ))
 
     return λder, ρder, zᵢ
@@ -221,7 +222,7 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
     λder, ρder, zᵢ = derivatives(bp, i; svd_trunc, logpriorder)
     
     if method==1
-        for t in eachindex(wᵢ)
+        Threads.@threads for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] += λstep*λder[j]
             end
@@ -229,7 +230,7 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==2
-        for t in eachindex(wᵢ)
+        Threads.@threads for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] *= (1 + λstep*sign(λder[j]))
             end
@@ -237,7 +238,7 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==21
-        for t in eachindex(wᵢ)
+        Threads.@threads for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] *= (1 + λstep*sign(λder[j])*5^(progress<.2))
             end
@@ -245,7 +246,7 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==3
-        for t in eachindex(wᵢ)
+        Threads.@threads for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] += λstep*sign(λder[j])
             end
@@ -253,11 +254,23 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==31
-        for t in eachindex(wᵢ)
+        Threads.@threads for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] += λstep*sign(λder[j])*5^(progress<.25)
             end
             wᵢ[t].ρ += ρstep*sign(ρder)*5^(progress<.25)
+        end
+
+    elseif method==4
+        Threads.@threads for t in eachindex(wᵢ)
+            wᵢ[t].λ .+= λstep .* tanh.(0.5.*λder)
+            wᵢ[t].ρ += ρstep * tanh(0.5*ρder)
+        end
+
+    elseif method==41
+        Threads.@threads for t in eachindex(wᵢ)
+            wᵢ[t].λ .+= λstep .* tanh.(0.001.*λder) * 3^(progress<.25)
+            wᵢ[t].ρ += ρstep * tanh(0.001*ρder) * 3^(progress<.25)
         end
 
     else
@@ -266,9 +279,9 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
 
     for t in eachindex(wᵢ)
         for j in 1:dᵢ
-            wᵢ[t].λ[j] = clamp(wᵢ[1].λ[j], 1e-6, 1-1e-6)
+            wᵢ[t].λ[j] = clamp(wᵢ[1].λ[j], 1e-9, 1-1e-9)
         end
-        wᵢ[t].ρ = clamp(wᵢ[1].ρ, 1e-6, 1-1e-6)
+        wᵢ[t].ρ = clamp(wᵢ[1].ρ, 1e-9, 1-1e-9)
     end
 
     return zᵢ
@@ -335,7 +348,7 @@ function (cb_inf::CB_INF)(bp::MPBP, logz::Float64, it::Integer, svd_trunc::SVDTr
     return Δ
 end
 
-function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0, showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress))
+function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0, showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress), verbose=true)
 
     for iter in 1:maxiter
         Threads.@threads for i in nodes
