@@ -35,8 +35,8 @@ end
 # The last matrix should have the same values no matter what xᵢᵀ⁺¹ is
 struct MPEM3{F<:Real}
     tensors :: Vector{Array{F,5}}
-    z       :: Logarithmic{F}
-    function MPEM3(tensors::Vector{Array{F,5}}; z::Logarithmic{F}=Logarithmic(one(F))) where {F<:Real}
+    z       :: Logarithmic{F1} where {F1}
+    function MPEM3(tensors::Vector{Array{F,5}}; z::Logarithmic{F1}=Logarithmic(one(F))) where {F<:Real, F1}
         size(tensors[1],1) == size(tensors[end],2) == 1 ||
             throw(ArgumentError("First matrix must have 1 row, last matrix must have 1 column"))
         check_bond_dims(tensors) ||

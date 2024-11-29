@@ -351,8 +351,9 @@ end
 function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0, showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress), verbose=true)
 
     for iter in 1:maxiter
-        Threads.@threads for i in nodes
-            onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp=0.0)
+        # Threads.@threads for i in nodes
+        for i in nodes
+            onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc)#, damp=0.0)
         end
 
         logz = 0.0

@@ -148,9 +148,17 @@ function onebpiter!(bp::MPBP{G,F}, i::Integer, ::Type{U};
     @assert wᵢ[1] isa U
     C, full = compute_prob_ys(wᵢ, nstates(bp,i), μ[ein.|>idx], ψ[eout.|>idx], getT(bp), svd_trunc)
     sumlogzᵢ₂ⱼ = zero(F)
+    display("out of for")
+    display(damp)
     for (j,e) = enumerate(eout)
+        display("for iteration")
+        display(damp)
         B = f_bp_partial_ij(C[j], wᵢ, ϕᵢ, dᵢ - 1, nstates(bp, dst(e)), j)
+        display(damp)
+        # damping=damp
         μj = orthogonalize_right!(mpem2(B); svd_trunc)
+        display(damp)
+        # display(damping)
         sumlogzᵢ₂ⱼ += set_msg!(bp, μj, idx(e), damp, svd_trunc)
     end
     B = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
