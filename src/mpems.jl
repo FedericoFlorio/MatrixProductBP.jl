@@ -1,31 +1,44 @@
 const AbstractMPEM1{F} = AbstractTensorTrain{F, 3}
+const AbstractBAMPEM1{F} = BasisTensorTrain{F, 3}
 const MPEM1{F} = TensorTrain{F, 3}
+const FourierMPEM1{F} = FourierTensorTrain{F, 3}
 const PeriodicMPEM1{F} = PeriodicTensorTrain{F, 3}
 
 # construct a flat mpem with given bond dimensions
 flat_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_tt(bondsizes, q)
+flat_fourier_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_fourier_tt(bondsizes, q)
 flat_periodic_mpem1(q::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = flat_periodic_tt(bondsizes, q)
 
 # construct a flat mpem with given bond dimensions
 rand_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = rand_tt(bondsizes, q)
+rand_fourier_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = rand_fourier_tt(bondsizes, q)
 rand_periodic_mpem1(q::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = rand_periodic_tt(bondsizes, q)
 
 nstates(A::AbstractMPEM1) = size(A[1], 3)
+nstates(A::AbstractBAMPEM1) = error("Number of states is not defined for Basis Tensor Trains")
+ntrunc(A::AbstractBAMPEM1) = size(A[1], 3)
 
 const AbstractMPEM2{F} = AbstractTensorTrain{F, 4}
+const AbstractBAMPEM2{F} = BasisTensorTrain{F, 4}
 const MPEM2{F} = TensorTrain{F, 4}
+const FourierMPEM2{F} = FourierTensorTrain{F, 4}
 const PeriodicMPEM2{F} = PeriodicTensorTrain{F, 4}
 
 # construct a flat mpem with given bond dimensions
 flat_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_tt(bondsizes, q1, q2)
+flat_fourier_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_fourier_tt(bondsizes, q1, q2)
 flat_periodic_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = flat_periodic_tt(bondsizes, q1, q2)
 
 # construct a flat mpem with given bond dimensions
 rand_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = rand_tt(bondsizes, q1, q2)
+rand_fourier_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = rand_fourier_tt(bondsizes, q1, q2)
 rand_periodic_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = rand_periodic_tt(bondsizes, q1, q2)
 
 function marginalize(A::MPEM2{F}) where F
     MPEM1{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A]; z = A.z)
+end
+function marginalize(A::FourierMPEM2{F}) where F
+    FourierMPEM2{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A]; z = A.z)
 end
 function marginalize(A::PeriodicMPEM2{F}) where F
     PeriodicMPEM1{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A]; z = A.z)
@@ -92,7 +105,7 @@ function mpem2(B::MPEM3{F}) where {F}
 end
 
 struct PeriodicMPEM3{F<:Real}
-    tensors::Vector{Array{F,5}}
+    tensors :: Vector{Array{F,5}}
     z       :: Logarithmic{F}
     function PeriodicMPEM3(tensors::Vector{Array{F,5}}; z::Logarithmic{F}=Logarithmic(one(F))) where {F<:Real}
         size(tensors[1],1) == size(tensors[end],2) ||
@@ -150,6 +163,63 @@ function mpem2(B::PeriodicMPEM3{F}) where {F}
     return PeriodicMPEM2{F}(C; z = 1/c * B.z)
 end
 
+# struct FourierMPEM3{F<:Real} <: AbstractBAMPEM3{F}
+#     tensors :: Vector{OffsetArray{Complex{F}, 5, Array{Complex{F}, 5}}}
+#     z       :: Logarithmic{F1} where {F1}
+#     function FourierMPEM3(tensors::Vector{Array{F,5}}; z::Logarithmic{F1}=Logarithmic(one(F))) where {F<:Real, F1}
+#         size(tensors[1],1) == size(tensors[end],2) == 1 ||
+#             throw(ArgumentError("First matrix must have 1 row, last matrix must have 1 column"))
+#         check_bond_dims(tensors) ||
+#             throw(ArgumentError("Matrix indices for matrix product non compatible"))
+#         new{F}(TensorTrains.offset_fourier_freqs(tensors), z)
+#     end
+# end
+
+# @forward FourierMPEM3.tensors Base.getindex, Base.iterate, Base.firstindex, Base.lastindex,
+#     Base.setindex!, Base.length, Base.eachindex
+
+
+# # evaluation of FourierMPEM3 is not simply evaluate(MatrixProductTrain{F,5}) because of how we
+# # interpret the entries of the tensors
+# function TensorTrains.evaluate(B::FourierMPEM3, x)
+#     length(x) == length(B) || throw(ArgumentError("`x` must be of length $(length(B)), got $(length(x))"))
+#     M = [1.0;;]
+#     for t in 1:lastindex(B)-1
+#         M = M * B[t][:, :, x[t][1], x[t][2], x[t+1][1]]
+#     end
+#     M = M * B[end][:, :, x[end][1], x[end][2], 1]
+#     return float( only(M) / B.z)
+# end
+
+# # convert mpem3 into mpem2 via a Left to Right sweep of SVD's
+# function mpem2(B::MPEM3{F}) where {F}
+#     C = Vector{Array{F,4}}(undef, length(B))
+#     qᵢᵗ = size(B[1], 3); qⱼᵗ = size(B[1], 4); qᵢᵗ⁺¹ = size(B[1], 5)
+#     c = Logarithmic(one(F))
+
+#     B⁰ = B[begin]
+#     @cast M[(xᵢᵗ, xⱼᵗ, m), (n, xᵢᵗ⁺¹)] |= B⁰[m, n, xᵢᵗ, xⱼᵗ, xᵢᵗ⁺¹]
+#     Bᵗ⁺¹_new = fill(1.0,1,1,1,1)  # initialize
+#     for t in Iterators.take(eachindex(B), length(B)-1)
+#         mt = maximum(abs, M)
+#         if !isnan(mt) && !isinf(mt) && !iszero(mt)
+#             M ./= mt
+#             c *= mt
+#         end
+#         U, λ, V = svd(M)   
+#         m = length(λ)     
+#         @cast Cᵗ[m, k, xᵢᵗ, xⱼᵗ] := U[(xᵢᵗ, xⱼᵗ, m), k] k∈1:m, xᵢᵗ∈1:qᵢᵗ, xⱼᵗ∈1:qⱼᵗ
+#         C[t] = Cᵗ
+#         @cast Vt[m, n, xᵢᵗ⁺¹] := V'[m, (n, xᵢᵗ⁺¹)]  xᵢᵗ⁺¹∈1:qᵢᵗ⁺¹
+#         Bᵗ⁺¹ = B[t+1]
+#         @tullio Bᵗ⁺¹_new[m, n, xᵢᵗ⁺¹, xⱼᵗ⁺¹, xᵢᵗ⁺²] := λ[m] * 
+#             Vt[m, l, xᵢᵗ⁺¹] * Bᵗ⁺¹[l, n, xᵢᵗ⁺¹, xⱼᵗ⁺¹, xᵢᵗ⁺²] 
+#         @cast M[(xᵢᵗ⁺¹, xⱼᵗ⁺¹, m), (n, xᵢᵗ⁺²)] |= Bᵗ⁺¹_new[m, n, xᵢᵗ⁺¹, xⱼᵗ⁺¹,xᵢᵗ⁺²]
+#     end
+#     @cast Cᵀ[m,n,xᵢ,xⱼ] := Bᵗ⁺¹_new[m,n,xᵢ,xⱼ,1]
+#     C[end] = Cᵀ
+#     return MPEM2{F}(C; z = 1/c * B.z)
+# end
 
 mpem3from2(::Type{MPEM2{F}}) where F = MPEM3
 mpem3from2(::Type{PeriodicMPEM2{F}}) where F = PeriodicMPEM3

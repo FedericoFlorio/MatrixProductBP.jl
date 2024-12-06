@@ -34,7 +34,8 @@ using TensorTrains:
     orthogonalize_right!, orthogonalize_left!, compress!,
     marginals, twovar_marginals, normalization, normalize!,
     svd, _compose, accumulate_L, accumulate_R
-
+using TensorTrains
+using OffsetArrays
 
 export 
     SVDTrunc, TruncBond, TruncThresh, TruncBondMax, TruncBondThresh,
