@@ -145,10 +145,10 @@ struct IntegerGlauberFactor{T<:Real}  <: RecursiveBPFactor
     J :: Vector{Int}      
     h :: T
     β :: T
-    K :: Int
+    K :: Int    # maximum possible value for local field (+1)
 end
 
-IntegerGlauberFactor(J,h,β) = IntegerGlauberFactor(J, h, β, sum(abs,J) + 1)
+IntegerGlauberFactor(J,h,β) = IntegerGlauberFactor(J, h, β, Int(sum(abs,J) + 1))
 
 
 nstates(w::IntegerGlauberFactor, l::Integer) = 2w.K-1

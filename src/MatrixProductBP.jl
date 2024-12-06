@@ -36,7 +36,8 @@ using TensorTrains:
     svd, _compose, accumulate_L, accumulate_R,
     InfiniteUniformTensorTrain, flat_infinite_uniform_tt, TruncVUMPS, dot
     
-    
+    using TensorTrains
+    using OffsetArrays
 
 export 
     SVDTrunc, TruncBond, TruncThresh, TruncBondMax, TruncBondThresh,
