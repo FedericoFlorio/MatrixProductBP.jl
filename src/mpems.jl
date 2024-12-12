@@ -38,7 +38,7 @@ function marginalize(A::MPEM2{F}) where F
     MPEM1{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A]; z = A.z)
 end
 function marginalize(A::FourierMPEM2{F}) where F
-    FourierMPEM2{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A]; z = A.z)
+    FourierMPEM1{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A], z = A.z)
 end
 function marginalize(A::PeriodicMPEM2{F}) where F
     PeriodicMPEM1{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A]; z = A.z)
