@@ -1,4 +1,5 @@
-using TensorTrains, Tullio, TensorCast, OffsetArrays, LogarithmicNumbers#, Memoization
+using TensorTrains, Tullio, TensorCast, OffsetArrays, LogarithmicNumbers, CavityTools#, Memoization
+using Unzip: unzip
 using UnPack: @unpack
 using InvertedIndices: Not
 using HypergeometricFunctions: _₂F₁
@@ -29,37 +30,33 @@ function Fourier3int_1(α::Int, γ::Int, w::Real, J::Float64, P::Float64)
     iszero(kαγ) ? w : sin(kαγ*w)/kαγ
 end
 
-function op(F₁::FourierMPEM2{U1}, F₂::FourierMPEM2{U1}, J₁::U2, J₂::U2, K::Int, w₁::Real, w₂::Real, P::Float64, svd_trunc; normalize::Bool=true) where {U1<:Number, U2<:Real}
-    K1 = (size(F₁[1],3)-1)/2 |> Int
-    K2 = (size(F₂[1],3)-1)/2 |> Int
-    @tullio Int_1[γ,α] := Fourier3int_1(α,γ,w₁,J₁,P) α∈-K1:K1, γ∈-K:K
-    @tullio Int_2[γ,β] := Fourier3int_1(β,γ,w₂,J₂,P) β∈-K2:K2, γ∈-K:K
-    @tullio Int_tensor[α,β,γ] := 4/P * Int_1[γ,α] * Int_2[γ,β]
-
-    GG = map(zip(F₁,F₂)) do (F₁ᵗ, F₂ᵗ)
-        @tullio Gt_[m1,n1,β,γ,x] := F₁ᵗ[m1,n1,α,x] * Int_tensor[α,β,γ]
-        @tullio Gt[m1,m2,n1,n2,γ,x] := F₂ᵗ[m2,n2,β,x] * Gt_[m1,n1,β,γ,x]
-        @cast Gᵗ[(m1,m2),(n1,n2),γ,x] := Gt[m1,m2,n1,n2,γ,x]
-        return collect(Gᵗ)
-    end
-
-    G = FourierTensorTrain(GG, z=F₁.z*F₂.z)
-    compress!(G; svd_trunc)
-    normalize && normalize_eachmatrix!(G)
-    return G
-end
-
 function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
-    K::Int=(size(F[1][1],3)-1)/2, scale::Real=1.0, svd_trunc=TruncThresh(1e-8)) where {U1<:Number, U2<:Real}
-    D = length(F)
-    D==1 && return F[1]
-    w = 1/scale # = P/2D
+    K::Int=(size(F[1][1],3)-1)/2, scale::Real=1.0, svd_trunc=TruncThresh(1e-8), normalize::Bool=true) where {U1<:Number, U2<:Real}
 
-    G = op(F[1], F[2], J[1], J[2], K, w, w, P, svd_trunc)
-    for i in 3:D
-        G = op(G, F[i], 1.0, J[i], K, (i-1)*w, w, P, svd_trunc)
+    function op((F₁, J₁, d₁), (F₂, J₂, d₂))
+        K1 = (size(F₁[1],3)-1)/2 |> Int
+        K2 = (size(F₂[1],3)-1)/2 |> Int
+        @tullio Int_1[γ,α] := Fourier3int_1(α,γ,max(1,d₁)/scale,J₁,P) α∈-K1:K1, γ∈-K:K
+        @tullio Int_2[γ,β] := Fourier3int_1(β,γ,max(1,d₂)/scale,J₂,P) β∈-K2:K2, γ∈-K:K
+        @tullio Int_tensor[α,β,γ] := 4/P * Int_1[γ,α] * Int_2[γ,β]
+    
+        GG = map(zip(F₁,F₂)) do (F₁ᵗ, F₂ᵗ)
+            @tullio Gt_[m1,n1,β,γ,x] := F₁ᵗ[m1,n1,α,x] * Int_tensor[α,β,γ]
+            @tullio Gt[m1,m2,n1,n2,γ,x] := F₂ᵗ[m2,n2,β,x] * Gt_[m1,n1,β,γ,x]
+            @cast Gᵗ[(m1,m2),(n1,n2),γ,x] := Gt[m1,m2,n1,n2,γ,x]
+            return collect(Gᵗ)
+        end
+    
+        G = FourierTensorTrain(GG, z=F₁.z*F₂.z)
+        compress!(G; svd_trunc)
+        normalize && normalize_eachmatrix!(G)
+        return (G, 1.0, d₁+d₂)
     end
-    return G
+
+    TTinit = [[1/2 for _ in 1:1, _ in 1:1, y in 1:2, x in 1:2] for _ in 1:length(F[1])] |> TensorTrain
+    Ginit = (FourierTensorTrain_spin(TTinit, K, Inf, P, 1/1.5K), 1.0, 0)
+    G, full = cavity(zip(F,J,fill(1,length(F))) |> collect, op, Ginit)
+    return G, full
 end
 
 function convolution(F::Vector{FourierMPEM1{U1}}, J::Vector{U2}, P::Float64;
@@ -75,11 +72,12 @@ function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, s)
     function _compute_primitive_1(X)
         expon = exp(1im*kᵧ * X + β*xp1*(Jxj+s*X))
         hypgeom = _₂F₁(1.0, bb, cc, -exp(2β*(Jxj+s*X)))
-        Int_ind = -im * expon / denom * hypgeom
+        return -im * expon / denom * hypgeom
     end
     function _compute_primitive_2(X)
-        Int_ind = (2β * (Jxj+s*X) - log(β*s * (1 + exp(2β * (Jxj+s*X))))) / (2β*s)
+        return (2β * (Jxj+s*X) - log(β*s * (1 + exp(2β * (Jxj+s*X))))) / (2β*s)
     end
+
     Jxj = Jⱼᵢ*xⱼᵗ + hᵢ
     if iszero(kᵧ) && xᵢᵗ⁺¹==-1
         return _compute_primitive_2(y[2]) - _compute_primitive_2(y[1])
@@ -90,8 +88,6 @@ function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, s)
         denom = kᵧ-1im*β*s*xp1
         return _compute_primitive_1(y[2]) - _compute_primitive_1(y[1])
     end
-
-    return Int_ind[2] - Int_ind[1]
 end
 
 function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, svd_trunc=TruncThresh(1e-6))
@@ -102,39 +98,28 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     scale = dᵢ+1
 
     μ_fourier = [FourierTensorTrain_spin(μ[k], K, scale, P, σ) for k in idx.(ein)]
-    for (j_ind,e_out) in enumerate(eout)
-        notj = eachindex(μ_fourier)[Not(j_ind)]
-        if isempty(notj)
-            μj = map(eachindex(bp.μ[idx(e_out)])) do t
-                Aᵗ = zeros(1,1,2,2,2)
-                ϕᵢᵗ = ϕᵢ[t]
-                @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] = exp(β*J[j_ind]*potts2spin(xⱼᵗ)*potts2spin(xᵢᵗ⁺¹)) / 2cosh(β*J[j_ind]*potts2spin(xⱼᵗ)) * ϕᵢᵗ[xᵢᵗ]
-            end |> MPEM3 |> mpem2
+    dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, scale, svd_trunc)
+    (conv_μ,) = unzip(dest)
 
-            compress!(μj; svd_trunc)
-            normalize!(μj)
-            bp.μ[idx(e_out)] = μj
-        else
-            conv_μ_notj = convolution(μ_fourier[notj], J[notj], P; K, scale, svd_trunc)
-            @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[j_ind],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1,1], scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+    for (j, e_out) in enumerate(eout)
+        conv_μ_notj = conv_μ[j]
 
-            μj = map(eachindex(conv_μ_notj)) do t
-                μᵗ₋ⱼ, ϕᵢᵗ = conv_μ_notj[t], ϕᵢ[t]
-                @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵗ₋ⱼ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ] * ϕᵢᵗ[xᵢᵗ]
-                real.(Aᵗ)
-            end
-            μᵀ₋ⱼ, ϕᵢᵀ = conv_μ_notj[end], ϕᵢ[end]
-            @tullio μjᵀ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵀ₋ⱼ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
-            μj[end] = real.(μjᵀ)
-            μᵢⱼ = collect.(μj) |> MPEM3 |> mpem2
-
-            compress!(μᵢⱼ; svd_trunc)
-            normalize!(μᵢⱼ)
-            bp.μ[idx(e_out)] = μᵢⱼ
+        @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1,1], scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+        μj = map(eachindex(conv_μ_notj)) do t
+            μᵗ₋ⱼ, ϕᵢᵗ = conv_μ_notj[t], ϕᵢ[t]
+            @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵗ₋ⱼ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ] * ϕᵢᵗ[xᵢᵗ]
+            real.(Aᵗ)
         end
+        μᵀ₋ⱼ, ϕᵢᵀ = conv_μ_notj[end], ϕᵢ[end]
+        @tullio μjᵀ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵀ₋ⱼ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
+        μj[end] = real.(μjᵀ)
+        μᵢⱼ = collect.(μj) |> MPEM3 |> mpem2
+
+        compress!(μᵢⱼ; svd_trunc)
+        normalize!(μᵢⱼ)
+        bp.μ[idx(e_out)] = μᵢⱼ
     end
 
-    conv_μ_full = convolution(μ_fourier, J, P; K, scale, svd_trunc)
     @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1,1], scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2
     b = map(eachindex(conv_μ_full)) do t
         μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
