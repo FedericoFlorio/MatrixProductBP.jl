@@ -50,6 +50,7 @@ function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
         G = FourierTensorTrain(GG, z=F₁.z*F₂.z)
         compress!(G; svd_trunc)
         normalize && normalize_eachmatrix!(G)
+        any(any(isnan, g) for g in G) && @error "NaN in Fourier tensor train"
         return (G, 1.0, d₁+d₂)
     end
 
