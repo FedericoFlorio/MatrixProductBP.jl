@@ -8,6 +8,7 @@ import MatrixProductBP: FourierMPEM2, FourierMPEM1
 
 # using Memoization
 using JLD2
+using Infiltrator
 
 potts2spin(x; q=2) = (x-1)/(q-1)*2 - 1
 spin2potts(σ; q=2) = (σ+1)/2*(q-1) + 1
@@ -72,34 +73,35 @@ end
 
 
 
-function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, s)
-    if s<0
-        @show β s
+@noinline function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, ::Val{scale}) where scale
+    if scale<0 || β<0
+        # @infiltrate scale<0
+        @show β scale
         display(Base.@locals)
         @assert false  
     end
-    function _compute_primitive_1(X, β, s, Jxj, kᵧ, xp1, bb, cc, denom)
-        expon = exp(im*kᵧ*X + β*xp1*(Jxj+s*X))
-        hypgeom = _₂F₁(1.0, bb, cc, -exp(2β*(Jxj+s*X)))
+    @noinline function _compute_primitive_1(X, β, scale, Jxj, kᵧ, xp1, bb, cc, denom)
+        expon = exp(im*kᵧ*X + β*xp1*(Jxj+scale*X))
+        hypgeom = _₂F₁(1.0, bb, cc, -exp(2β*(Jxj+scale*X)))
         return expon / denom * hypgeom
     end
-    function _compute_primitive_2(X, β, s, Jxj)
+    @noinline function _compute_primitive_2(X, β, scale, Jxj)
         # @show "1" β
-        a = β*s * (1 + exp(2β * (Jxj+s*X)))
-        return (2β * (Jxj+s*X) - log(a)) / (2β*s)
-        # return X + Jxj/s - (log(β*s) + log(1 + exp(2β * (Jxj+s*X)))) / (2β*s)
+        a = β*scale * (1 + exp(2β * (Jxj+scale*X)))
+        return (2β * (Jxj+scale*X) - log(a)) / (2β*scale)
+        # return X + Jxj/scale - (log(β*scale) + log(1 + exp(2β * (Jxj+scale*X)))) / (2β*scale)
     end
 
     Jxj = Jⱼᵢ*xⱼᵗ + hᵢ
     if iszero(kᵧ) && xᵢᵗ⁺¹==-1
-        return _compute_primitive_2(y[2], β, s, Jxj) - _compute_primitive_2(y[1], β, s, Jxj)
+        return _compute_primitive_2(y[2], β, scale, Jxj) - _compute_primitive_2(y[1], β, scale, Jxj)
     else
         # @show "2" β
         xp1 = 1+xᵢᵗ⁺¹
-        bb = (xp1 + im*kᵧ/(β*s)) / 2
+        bb = (xp1 + im*kᵧ/(β*scale)) / 2
         cc = 1 + bb
-        denom = im*kᵧ + β*s*xp1
-        return _compute_primitive_1(y[2], β, s, Jxj, kᵧ, xp1, bb, cc, denom) - _compute_primitive_1(y[1], β, s, Jxj, kᵧ, xp1, bb, cc, denom)
+        denom = im*kᵧ + β*scale*xp1
+        return _compute_primitive_1(y[2], β, scale, Jxj, kᵧ, xp1, bb, cc, denom) - _compute_primitive_1(y[1], β, scale, Jxj, kᵧ, xp1, bb, cc, denom)
     end
 end
 
@@ -109,6 +111,8 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     wᵢ, ϕᵢ, dᵢ  = w[i][1], ϕ[i], length(ein)
     J, hᵢ, β = float.(wᵢ.J), wᵢ.h, wᵢ.β
     scale1 = dᵢ+1.0
+    # @show scale1 β
+    # display(scale1)
 
 
     μ_fourier = [FourierTensorTrain_spin(μ[k], K, scale1, P, σ) for k in idx.(ein)]
@@ -122,7 +126,7 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
         # @show "3" β scale
         # @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
         @assert scale1>0
-        In_ = [_compute_integral(β,J[j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) for γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2]
+        In_ = [_compute_integral(β,J[j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], Val(scale1)) for γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2]
         In = OffsetArray(In_, -K:K, 1:2, 1:2)
 
         μj = map(eachindex(conv_μ_notj)) do t
@@ -141,7 +145,8 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     end
 
     # @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2
-    In_ = [_compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) for γ∈-K:K, xᵢᵗ⁺¹∈1:2]
+    @assert scale1>0
+    In_ = [_compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], Val(scale1)) for γ∈-K:K, xᵢᵗ⁺¹∈1:2]
     In = OffsetArray(In_, -K:K, 1:2)
     b = map(eachindex(conv_μ_full)) do t
         μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]

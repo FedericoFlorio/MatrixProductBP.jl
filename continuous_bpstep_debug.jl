@@ -17,7 +17,7 @@ T = 4
 N = 3
 A = [0 1 1; 
      1 0 0;
-     1 0 0;]
+     1 0 0]
 # N = 4
 # A = [0 1 0 0; 
 #      1 0 1 0; 
@@ -109,7 +109,6 @@ msg = deepcopy(bp.μ)
 
 bp_fourier = deepcopy(bp)
 # iterate_fourier!(bp_fourier,K, maxiter=1, σ=1/100; svd_trunc)
-;
 
 iterate!(bp,maxiter=1; svd_trunc)
 
