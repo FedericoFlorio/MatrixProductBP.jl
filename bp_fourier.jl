@@ -1,10 +1,13 @@
-using TensorTrains, Tullio, TensorCast, OffsetArrays, LogarithmicNumbers, CavityTools#, Memoization
+using TensorTrains, Tullio, TensorCast, OffsetArrays, LogarithmicNumbers, CavityTools
 using Unzip: unzip
 using UnPack: @unpack
+using ProgressMeter: Progress, ProgressUnknown, next!
 using InvertedIndices: Not
 using HypergeometricFunctions: _₂F₁
 import MatrixProductBP: FourierMPEM2, FourierMPEM1
-# using JLD2
+
+# using Memoization
+using JLD2
 
 potts2spin(x; q=2) = (x-1)/(q-1)*2 - 1
 spin2potts(σ; q=2) = (σ+1)/2*(q-1) + 1
@@ -27,7 +30,7 @@ end
 
 function Fourier3int_1(α::Int, γ::Int, w::Real, J::Float64, P::Float64)
     kαγ = 2π/P*(α-J*γ)
-    iszero(kαγ) ? w : sin(kαγ*w)/kαγ
+    iszero(kαγ) ? 2w : sin(kαγ*w)/kαγ
 end
 
 function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
@@ -38,11 +41,11 @@ function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
         K2 = (size(F₂[1],3)-1)/2 |> Int
         @tullio Int_1[γ,α] := Fourier3int_1(α,γ,max(1,d₁)/scale,J₁,P) α∈-K1:K1, γ∈-K:K
         @tullio Int_2[γ,β] := Fourier3int_1(β,γ,max(1,d₂)/scale,J₂,P) β∈-K2:K2, γ∈-K:K
-        @tullio Int_tensor[α,β,γ] := 4/P * Int_1[γ,α] * Int_2[γ,β]
     
         GG = map(zip(F₁,F₂)) do (F₁ᵗ, F₂ᵗ)
-            @tullio Gt_[m1,n1,β,γ,x] := F₁ᵗ[m1,n1,α,x] * Int_tensor[α,β,γ]
-            @tullio Gt[m1,m2,n1,n2,γ,x] := F₂ᵗ[m2,n2,β,x] * Gt_[m1,n1,β,γ,x]
+            @tullio Gt1[m1,n1,γ,x] := F₁ᵗ[m1,n1,α,x] * Int_1[γ,α]
+            @tullio Gt2[m2,n2,γ,x] := F₂ᵗ[m2,n2,β,x] * Int_2[γ,β]
+            @tullio Gt[m1,m2,n1,n2,γ,x] := 4/P * Gt1[m1,n1,γ,x] * Gt2[m2,n2,γ,x]
             @cast Gᵗ[(m1,m2),(n1,n2),γ,x] := Gt[m1,m2,n1,n2,γ,x]
             return collect(Gᵗ)
         end
@@ -50,7 +53,7 @@ function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
         G = FourierTensorTrain(GG, z=F₁.z*F₂.z)
         compress!(G; svd_trunc)
         normalize && normalize_eachmatrix!(G)
-        any(any(isnan, g) for g in G) && @error "NaN in Fourier tensor train"
+        any(any(isnan, Gᵗ) for Gᵗ in G) && @error "NaN in Fourier tensor train"
         return (G, 1.0, d₁+d₂)
     end
 
@@ -70,24 +73,33 @@ end
 
 
 function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, s)
-    function _compute_primitive_1(X)
-        expon = exp(1im*kᵧ * X + β*xp1*(Jxj+s*X))
-        hypgeom = _₂F₁(1.0, bb, cc, -exp(2β*(Jxj+s*X)))
-        return -im * expon / denom * hypgeom
+    if s<0
+        @show β s
+        display(Base.@locals)
+        @assert false  
     end
-    function _compute_primitive_2(X)
-        return (2β * (Jxj+s*X) - log(β*s * (1 + exp(2β * (Jxj+s*X))))) / (2β*s)
+    function _compute_primitive_1(X, β, s, Jxj, kᵧ, xp1, bb, cc, denom)
+        expon = exp(im*kᵧ*X + β*xp1*(Jxj+s*X))
+        hypgeom = _₂F₁(1.0, bb, cc, -exp(2β*(Jxj+s*X)))
+        return expon / denom * hypgeom
+    end
+    function _compute_primitive_2(X, β, s, Jxj)
+        # @show "1" β
+        a = β*s * (1 + exp(2β * (Jxj+s*X)))
+        return (2β * (Jxj+s*X) - log(a)) / (2β*s)
+        # return X + Jxj/s - (log(β*s) + log(1 + exp(2β * (Jxj+s*X)))) / (2β*s)
     end
 
     Jxj = Jⱼᵢ*xⱼᵗ + hᵢ
     if iszero(kᵧ) && xᵢᵗ⁺¹==-1
-        return _compute_primitive_2(y[2]) - _compute_primitive_2(y[1])
+        return _compute_primitive_2(y[2], β, s, Jxj) - _compute_primitive_2(y[1], β, s, Jxj)
     else
+        # @show "2" β
         xp1 = 1+xᵢᵗ⁺¹
-        bb = (xp1 + 1im*kᵧ/(β*s)) / 2
+        bb = (xp1 + im*kᵧ/(β*s)) / 2
         cc = 1 + bb
-        denom = kᵧ-1im*β*s*xp1
-        return _compute_primitive_1(y[2]) - _compute_primitive_1(y[1])
+        denom = im*kᵧ + β*s*xp1
+        return _compute_primitive_1(y[2], β, s, Jxj, kᵧ, xp1, bb, cc, denom) - _compute_primitive_1(y[1], β, s, Jxj, kᵧ, xp1, bb, cc, denom)
     end
 end
 
@@ -96,16 +108,23 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     ein, eout = inedges(g,i), outedges(g, i)
     wᵢ, ϕᵢ, dᵢ  = w[i][1], ϕ[i], length(ein)
     J, hᵢ, β = float.(wᵢ.J), wᵢ.h, wᵢ.β
-    scale = dᵢ+1
+    scale1 = dᵢ+1.0
 
-    μ_fourier = [FourierTensorTrain_spin(μ[k], K, scale, P, σ) for k in idx.(ein)]
-    dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, scale, svd_trunc)
+
+    μ_fourier = [FourierTensorTrain_spin(μ[k], K, scale1, P, σ) for k in idx.(ein)]
+    dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, scale=scale1, svd_trunc)
     (conv_μ,) = unzip(dest)
 
     for (j, e_out) in enumerate(eout)
         conv_μ_notj = conv_μ[j]
+        # jldsave("./check_convolution/m_$(src(e_out))-$(dst(e_out)) fourier.jld2"; conv_μ_notj)
 
-        @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1,1], scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+        # @show "3" β scale
+        # @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+        @assert scale1>0
+        In_ = [_compute_integral(β,J[j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) for γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2]
+        In = OffsetArray(In_, -K:K, 1:2, 1:2)
+
         μj = map(eachindex(conv_μ_notj)) do t
             μᵗ₋ⱼ, ϕᵢᵗ = conv_μ_notj[t], ϕᵢ[t]
             @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵗ₋ⱼ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ] * ϕᵢᵗ[xᵢᵗ]
@@ -121,7 +140,9 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
         bp.μ[idx(e_out)] = μᵢⱼ
     end
 
-    @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1,1], scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2
+    # @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2
+    In_ = [_compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) for γ∈-K:K, xᵢᵗ⁺¹∈1:2]
+    In = OffsetArray(In_, -K:K, 1:2)
     b = map(eachindex(conv_μ_full)) do t
         μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
         @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹] * ϕᵢᵗ[xᵢᵗ] xⱼᵗ∈1:2
@@ -138,13 +159,26 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     return nothing
 end
 
-function iterate_fourier!(bp::MPBP, K::Integer; maxiter::Integer=5, svd_trunc::SVDTrunc=TruncThresh(1e-6), nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, σ::Real=1/50)
+function (cb::CB_BP)(bp::MPBP, it::Integer, svd_trunc::SVDTrunc)
+    marg_new = means(cb.f, bp)
+    marg_old = cb.m[end]
+    Δ = isempty(marg_new) ? NaN : maximum(maximum(abs, mn .- mo) for (mn, mo) in zip(marg_new, marg_old))
+    push!(cb.Δs, Δ)
+    push!(cb.m, marg_new)
+    next!(cb.prog, showvalues=[(:Δ,Δ), summary_compact(svd_trunc)])
+    flush(stdout)
+    return Δ
+end
+
+function iterate_fourier!(bp::MPBP, K::Integer; maxiter::Integer=5, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, cb=CB_BP(bp; showprogress), tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, σ::Real=1/50)
     for it in 1:maxiter
         # Threads.@threads for i in nodes
         for i in nodes
             onebpiter_fourier!(bp, i, K; svd_trunc)
         end
+        Δ = cb(bp, it, svd_trunc)
+        Δ < tol && return it, cb
         shuffle_nodes && sample!(nodes, collect(vertices(bp.g)), replace=false)
     end
-    return nothing
+    return maxiter, cb
 end
