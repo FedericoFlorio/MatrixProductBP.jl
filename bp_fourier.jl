@@ -7,8 +7,11 @@ using HypergeometricFunctions: _₂F₁
 import MatrixProductBP: FourierMPEM2, FourierMPEM1
 
 # using Memoization
-using JLD2
-using Infiltrator
+# using JLD2
+# using Infiltrator
+# using Nemo: hypergeometric_2f1, AcbField
+using Nemo
+ComplexF64(x::Nemo.AcbFieldElem) = ComplexF64(Float64(real(x)), Float64(imag(x)))
 
 potts2spin(x; q=2) = (x-1)/(q-1)*2 - 1
 spin2potts(σ; q=2) = (σ+1)/2*(q-1) + 1
@@ -73,20 +76,33 @@ end
 
 
 
-@noinline function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, ::Val{scale}) where scale
-    if scale<0 || β<0
+test_func_hypgeom(b,c,z) = log(abs(b*c*z))
+
+function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, scale)
+    scale<2 && @error "Scale must be at least 2"
+    if scale<0 || β!=1.0
         # @infiltrate scale<0
         @show β scale
         display(Base.@locals)
-        @assert false  
+        @assert false
     end
-    @noinline function _compute_primitive_1(X, β, scale, Jxj, kᵧ, xp1, bb, cc, denom)
+    function _compute_primitive_1(X, β, scale, Jxj, kᵧ, xp1, bb, cc, denom)
         expon = exp(im*kᵧ*X + β*xp1*(Jxj+scale*X))
         hypgeom = _₂F₁(1.0, bb, cc, -exp(2β*(Jxj+scale*X)))
-        return expon / denom * hypgeom
+
+        CC = AcbField(64)
+        a_ = CC(1.0)
+        b_ = CC(bb)
+        c_ = CC(1+bb)
+        x_ = CC(-exp(2β*(Jxj+scale*X)))
+        hypgeom = hypergeometric_2f1(a_, b_, c_, x_)
+
+        max((Nemo.radius(real(hypgeom))), Nemo.radius(imag(hypgeom))) > 0.01 && @error "Numerical errors $hypgeom"
+        # hypgeom = test_func_hypgeom(bb, cc, -exp(2β*(Jxj+scale*X)))
+        return expon * ComplexF64(hypgeom) / denom
     end
-    @noinline function _compute_primitive_2(X, β, scale, Jxj)
-        # @show "1" β
+    function _compute_primitive_2(X, β, scale, Jxj)
+        -0.2 ≤ 2β * (Jxj+scale*X) ≤ 0.4 && @error "Numerical instability"
         a = β*scale * (1 + exp(2β * (Jxj+scale*X)))
         return (2β * (Jxj+scale*X) - log(a)) / (2β*scale)
         # return X + Jxj/scale - (log(β*scale) + log(1 + exp(2β * (Jxj+scale*X)))) / (2β*scale)
@@ -96,7 +112,6 @@ end
     if iszero(kᵧ) && xᵢᵗ⁺¹==-1
         return _compute_primitive_2(y[2], β, scale, Jxj) - _compute_primitive_2(y[1], β, scale, Jxj)
     else
-        # @show "2" β
         xp1 = 1+xᵢᵗ⁺¹
         bb = (xp1 + im*kᵧ/(β*scale)) / 2
         cc = 1 + bb
@@ -111,8 +126,6 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     wᵢ, ϕᵢ, dᵢ  = w[i][1], ϕ[i], length(ein)
     J, hᵢ, β = float.(wᵢ.J), wᵢ.h, wᵢ.β
     scale1 = dᵢ+1.0
-    # @show scale1 β
-    # display(scale1)
 
 
     μ_fourier = [FourierTensorTrain_spin(μ[k], K, scale1, P, σ) for k in idx.(ein)]
@@ -123,11 +136,7 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
         conv_μ_notj = conv_μ[j]
         # jldsave("./check_convolution/m_$(src(e_out))-$(dst(e_out)) fourier.jld2"; conv_μ_notj)
 
-        # @show "3" β scale
-        # @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
-        @assert scale1>0
-        In_ = [_compute_integral(β,J[j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], Val(scale1)) for γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2]
-        In = OffsetArray(In_, -K:K, 1:2, 1:2)
+        @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
 
         μj = map(eachindex(conv_μ_notj)) do t
             μᵗ₋ⱼ, ϕᵢᵗ = conv_μ_notj[t], ϕᵢ[t]
@@ -144,10 +153,7 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
         bp.μ[idx(e_out)] = μᵢⱼ
     end
 
-    # @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2
-    @assert scale1>0
-    In_ = [_compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], Val(scale1)) for γ∈-K:K, xᵢᵗ⁺¹∈1:2]
-    In = OffsetArray(In_, -K:K, 1:2)
+    @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2
     b = map(eachindex(conv_μ_full)) do t
         μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
         @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹] * ϕᵢᵗ[xᵢᵗ] xⱼᵗ∈1:2
