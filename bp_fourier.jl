@@ -6,12 +6,15 @@ using InvertedIndices: Not
 using HypergeometricFunctions: _₂F₁
 import MatrixProductBP: FourierMPEM2, FourierMPEM1
 
-# using Memoization
-# using JLD2
+using Memoization
+using JLD2
 # using Infiltrator
 # using Nemo: hypergeometric_2f1, AcbField
 using Nemo
-ComplexF64(x::Nemo.AcbFieldElem) = ComplexF64(Float64(real(x)), Float64(imag(x)))
+import Base.ComplexF64
+function complex(x::Nemo.AcbFieldElem)
+    return ComplexF64(Float64(real(x)), Float64(imag(x)))
+end
 
 potts2spin(x; q=2) = (x-1)/(q-1)*2 - 1
 spin2potts(σ; q=2) = (σ+1)/2*(q-1) + 1
@@ -32,19 +35,24 @@ function Fourier3int(α::Int, β::Int, γ::Int, w₁::Real, w₂::Real, J1::Floa
     return 4/P * I1 * I2
 end
 
+# function Fourier3int_1(α::Int, γ::Int, w::Real, J::Float64, P::Float64)
+#     kαγ = 2π/P*(α-J*γ)
+#     iszero(kαγ) ? 2w : 2sin(kαγ*w)/kαγ
+# end
 function Fourier3int_1(α::Int, γ::Int, w::Real, J::Float64, P::Float64)
     kαγ = 2π/P*(α-J*γ)
-    iszero(kαγ) ? 2w : sin(kαγ*w)/kαγ
+    iszero(kαγ) ? w : sin(kαγ*w)/(kαγ*2w)
 end
 
 function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
     K::Int=(size(F[1][1],3)-1)/2, scale::Real=1.0, svd_trunc=TruncThresh(1e-8), normalize::Bool=true) where {U1<:Number, U2<:Real}
 
     function op((F₁, J₁, d₁), (F₂, J₂, d₂))
+        # display(svd_trunc)
         K1 = (size(F₁[1],3)-1)/2 |> Int
         K2 = (size(F₂[1],3)-1)/2 |> Int
-        @tullio Int_1[γ,α] := Fourier3int_1(α,γ,max(1,d₁)/scale,J₁,P) α∈-K1:K1, γ∈-K:K
-        @tullio Int_2[γ,β] := Fourier3int_1(β,γ,max(1,d₂)/scale,J₂,P) β∈-K2:K2, γ∈-K:K
+        @tullio Int_1[γ,α] := Fourier3int_1(α,γ,(1+d₁)/scale,J₁,P) α∈-K1:K1, γ∈-K:K
+        @tullio Int_2[γ,β] := Fourier3int_1(β,γ,(1+d₂)/scale,J₂,P) β∈-K2:K2, γ∈-K:K
     
         GG = map(zip(F₁,F₂)) do (F₁ᵗ, F₂ᵗ)
             @tullio Gt1[m1,n1,γ,x] := F₁ᵗ[m1,n1,α,x] * Int_1[γ,α]
@@ -55,12 +63,17 @@ function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
         end
     
         G = FourierTensorTrain(GG, z=F₁.z*F₂.z)
-        compress!(G; svd_trunc)
+        G_ = deepcopy(G)
+        compress!(G_; svd_trunc)
+        @assert marginals_Fourier(marginalize(G)) ≈ marginals_Fourier(marginalize(G_))
         normalize && normalize_eachmatrix!(G)
         any(any(isnan, Gᵗ) for Gᵗ in G) && @error "NaN in Fourier tensor train"
         return (G, 1.0, d₁+d₂)
     end
 
+    # for f in F
+    #     display(f[3][:,:,-3:3,:])
+    # end
     TTinit = [[1/2 for _ in 1:1, _ in 1:1, y in 1:2, x in 1:2] for _ in 1:length(F[1])] |> TensorTrain
     Ginit = (FourierTensorTrain_spin(TTinit, K, Inf, P, 1/1.5K), 1.0, 0)
     G, full = cavity(zip(F,J,fill(1,length(F))) |> collect, op, Ginit)
@@ -76,19 +89,9 @@ end
 
 
 
-test_func_hypgeom(b,c,z) = log(abs(b*c*z))
-
 function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, scale)
-    scale<2 && @error "Scale must be at least 2"
-    if scale<0 || β!=1.0
-        # @infiltrate scale<0
-        @show β scale
-        display(Base.@locals)
-        @assert false
-    end
     function _compute_primitive_1(X, β, scale, Jxj, kᵧ, xp1, bb, cc, denom)
         expon = exp(im*kᵧ*X + β*xp1*(Jxj+scale*X))
-        hypgeom = _₂F₁(1.0, bb, cc, -exp(2β*(Jxj+scale*X)))
 
         CC = AcbField(64)
         a_ = CC(1.0)
@@ -97,12 +100,13 @@ function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, scale)
         x_ = CC(-exp(2β*(Jxj+scale*X)))
         hypgeom = hypergeometric_2f1(a_, b_, c_, x_)
 
-        max((Nemo.radius(real(hypgeom))), Nemo.radius(imag(hypgeom))) > 0.01 && @error "Numerical errors $hypgeom"
-        # hypgeom = test_func_hypgeom(bb, cc, -exp(2β*(Jxj+scale*X)))
-        return expon * ComplexF64(hypgeom) / denom
+        isnan(Float64(real(hypgeom))+Float64(real(hypgeom))) && @error "NaN in hypergeometric function"
+        max((Nemo.radius(real(hypgeom))), Nemo.radius(imag(hypgeom))) > 0.001 && @error "Numerical errors $hypgeom"
+        
+        return expon * complex(hypgeom) / denom
     end
     function _compute_primitive_2(X, β, scale, Jxj)
-        -0.2 ≤ 2β * (Jxj+scale*X) ≤ 0.4 && @error "Numerical instability"
+        # -0.2 ≤ 2β * (Jxj+scale*X) ≤ 0.4 && @error "Numerical instability"
         a = β*scale * (1 + exp(2β * (Jxj+scale*X)))
         return (2β * (Jxj+scale*X) - log(a)) / (2β*scale)
         # return X + Jxj/scale - (log(β*scale) + log(1 + exp(2β * (Jxj+scale*X)))) / (2β*scale)
@@ -120,6 +124,55 @@ function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, scale)
     end
 end
 
+# function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, scale)
+#     function _compute_primitive_m1(X, β, scale, Jxj, kᵧ)
+#         expon = exp(im*kᵧ*X)
+#         bb = im*kᵧ/(2β*scale)
+
+#         CC = AcbField(64)
+#         a_ = CC(1.0)
+#         b_ = CC(bb)
+#         c_ = CC(1+bb)
+#         x_ = CC(-exp(2β*(Jxj+scale*X)))
+#         hypgeom = hypergeometric_2f1(a_, b_, c_, x_)
+
+#         isnan(Float64(real(hypgeom))+Float64(real(hypgeom))) && @error "NaN in hypergeometric function"
+#         max((Nemo.radius(real(hypgeom))), Nemo.radius(imag(hypgeom))) > 0.001 && @error "Numerical errors $hypgeom"
+        
+#         return expon * complex(hypgeom) * (-im/kᵧ)
+#     end
+#     function _compute_primitive_p1(X, β, scale, Jxj, kᵧ,)
+#         expon = exp(im*kᵧ*X) * exp(2β*(Jxj+scale*X))
+#         bb = 1 + im*kᵧ/(2β*scale)
+
+#         CC = AcbField(64)
+#         a_ = CC(1.0)
+#         b_ = CC(bb)
+#         c_ = CC(1+bb)
+#         x_ = CC(-exp(2β*(Jxj+scale*X)))
+#         hypgeom = hypergeometric_2f1(a_, b_, c_, x_)
+
+#         isnan(Float64(real(hypgeom))+Float64(real(hypgeom))) && @error "NaN in hypergeometric function"
+#         max((Nemo.radius(real(hypgeom))), Nemo.radius(imag(hypgeom))) > 0.001 && @error "Numerical errors $hypgeom"
+        
+#         return expon * complex(hypgeom) / (2β*scale + im*kᵧ)
+#     end
+#     function _compute_primitive_2(X, β, scale, Jxj)
+#         a = β*scale * (1 + exp(2β * (Jxj+scale*X)))
+#         return (2β * (Jxj+scale*X) - log(a)) / (2β*scale)
+#         # return X + Jxj/scale - (log(β*scale) + log(1 + exp(2β * (Jxj+scale*X)))) / (2β*scale)
+#     end
+
+#     Jxj = Jⱼᵢ*xⱼᵗ + hᵢ
+#     if iszero(kᵧ) && xᵢᵗ⁺¹==-1
+#         return _compute_primitive_2(y[2], β, scale, Jxj) - _compute_primitive_2(y[1], β, scale, Jxj)
+#     elseif xᵢᵗ⁺¹==-1
+#         return _compute_primitive_m1(y[2], β, scale, Jxj, kᵧ) - _compute_primitive_m1(y[1], β, scale, Jxj, kᵧ)
+#     elseif xᵢᵗ⁺¹==1
+#         return _compute_primitive_p1(y[2], β, scale, Jxj, kᵧ) - _compute_primitive_p1(y[1], β, scale, Jxj, kᵧ) 
+#     end
+# end
+
 function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, svd_trunc=TruncThresh(1e-6))
     @unpack g, w, ϕ, ψ, μ = bp
     ein, eout = inedges(g,i), outedges(g, i)
@@ -127,16 +180,30 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     J, hᵢ, β = float.(wᵢ.J), wᵢ.h, wᵢ.β
     scale1 = dᵢ+1.0
 
+    # for (k,ed) in enumerate(ein)
+    #     display(ed)
+    #     display(μ[idx(ed)][3])
+    #     μprime = FourierTensorTrain_spin(μ[idx(ed)], K, scale1, P, σ)
+    #     display(μprime[3])
+    # end
 
     μ_fourier = [FourierTensorTrain_spin(μ[k], K, scale1, P, σ) for k in idx.(ein)]
+    # for (j,ed) in enumerate(ein)
+    #     display(ed)
+    #     display(μ_fourier[j][3][:,:,-3:3,:])
+    # end
+
     dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, scale=scale1, svd_trunc)
     (conv_μ,) = unzip(dest)
 
     for (j, e_out) in enumerate(eout)
         conv_μ_notj = conv_μ[j]
+        # display(e_out)
+        display(conv_μ_notj[3][:,:,-3:3,:])
         # jldsave("./check_convolution/m_$(src(e_out))-$(dst(e_out)) fourier.jld2"; conv_μ_notj)
 
         @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+        any(isnan, In) && @error "NaN in integral"
 
         μj = map(eachindex(conv_μ_notj)) do t
             μᵗ₋ⱼ, ϕᵢᵗ = conv_μ_notj[t], ϕᵢ[t]
@@ -150,10 +217,12 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
 
         compress!(μᵢⱼ; svd_trunc)
         normalize!(μᵢⱼ)
+        # display(μᵢⱼ[3])
         bp.μ[idx(e_out)] = μᵢⱼ
     end
 
     @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2
+    any(isnan, In) && @error "NaN in integral"
     b = map(eachindex(conv_μ_full)) do t
         μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
         @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹] * ϕᵢᵗ[xᵢᵗ] xⱼᵗ∈1:2
