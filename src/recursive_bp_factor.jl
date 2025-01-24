@@ -168,7 +168,7 @@ function onebpiter!(bp::MPBP{G,F,V,MsgType}, i::Integer, ::Type{U};
 end
 
 # write message to destination after applying damping
-function set_msg!(bp::MPBP{G,F,V,M2}, μj::M2, edge_id, damp, svd_trunc) where {G,F,V,M2}
+function set_msg!(bp::MPBP{G,F1,F2,V,M2}, μj::M2, edge_id, damp, svd_trunc) where {G,F1,F2,V,M2}
     @assert 0 ≤ damp < 1
     μ_old = bp.μ[edge_id]
     logzᵢ₂ⱼ = normalize!(μj)

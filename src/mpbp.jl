@@ -1,18 +1,18 @@
-struct MPBP{G<:AbstractIndexedDiGraph, F<:Real, V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
+struct MPBP{G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number, V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
     g     :: G                              # graph
     w     :: Vector{V}                      # factors, one per variable
-    ϕ     :: Vector{Vector{Vector{F}}}      # vertex-dependent factors
-    ψ     :: Vector{Vector{Matrix{F}}}      # edge-dependent factors
+    ϕ     :: Vector{Vector{Vector{F1}}}      # vertex-dependent factors
+    ψ     :: Vector{Vector{Matrix{F1}}}      # edge-dependent factors
     μ     :: AtomicVector{M2}               # messages, two per edge
     b     :: Vector{M1}                     # beliefs in matrix product form
-    f     :: Vector{F}                      # free energy contributions
+    f     :: Vector{F2}                      # free energy contributions
     
     function MPBP(g::G, w::Vector{V}, 
-            ϕ::Vector{Vector{Vector{F}}},
-            ψ::Vector{Vector{Matrix{F}}},
+            ϕ::Vector{Vector{Vector{F1}}},
+            ψ::Vector{Vector{Matrix{F1}}},
             μ::Vector{M2},
             b::Vector{M1},
-            f::Vector{F}) where {G<:AbstractIndexedDiGraph, F<:Real, 
+            f::Vector{F2}) where {G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number,
             V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
     
         @assert issymmetric(g)
@@ -28,7 +28,7 @@ struct MPBP{G<:AbstractIndexedDiGraph, F<:Real, V<:AbstractVector{<:BPFactor}, M
         @assert all( length(μᵢⱼ) == T + 1 for μᵢⱼ in μ)
         @assert all( length(bᵢ) == T + 1 for bᵢ in b )
         @assert length(μ) == ne(g)
-        return new{G,F,V,M2,M1}(g, w, ϕ, ψ, AtomicVector(μ), b, f)
+        return new{G,F1,F2,V,M2,M1}(g, w, ϕ, ψ, AtomicVector(μ), b, f)
     end
 end
 
@@ -57,15 +57,32 @@ function check_ψs(ψ::Vector{<:Vector{<:Matrix{<:Real}}}, g::IndexedBiDiGraph)
     return true
 end
 
-function mpbp(g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
-        q::AbstractVector{Int}, T::Int; 
+function mpbp(elem_type::DataType, g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
+        q::AbstractVector{Int}, T::Int;
         d::Int=1,
         bondsizes=[1; fill(d, T); 1],
         ϕ = [[ones(q[i]) for t in 0:T] for i in vertices(g)],
         ψ = [[ones(q[i],q[j]) for t in 0:T] for (i,j) in edges(g)],
-        μ = [flat_mpem2(q[i],q[j], T; d, bondsizes) for (i,j) in edges(g)],
-        b = [flat_mpem1(q[i], T; d, bondsizes) for i in vertices(g)],
-        f = zeros(nv(g)))
+        μ = [flat_mpem2(q[i],q[j], T; d, bondsizes, elem_type) for (i,j) in edges(g)],
+        b = [flat_mpem1(q[i], T; d, bondsizes, elem_type) for i in vertices(g)],
+        f = zeros(elem_type, nv(g)))
+    return MPBP(g, w, ϕ, ψ, μ, b, f)
+end
+function mpbp(g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
+    q::AbstractVector{Int}, T::Int; kw...)
+    return mpbp(Float64, g, w, q, T; kw...)
+end
+
+# this function converts the messages and beliefs in a MPBP object to a different element type
+function convert_msg_beliefs(elem_type::DataType, bp::MPBP)
+    g = deepcopy(bp.g)
+    w = deepcopy(bp.w)
+    ϕ = deepcopy(bp.ϕ)
+    ψ = deepcopy(bp.ψ)
+    μ = [[elem_type.(μᵗ) for μᵗ in μ] |> TensorTrain for μ in bp.μ]
+    b = [[elem_type.(bᵗ) for bᵗ in b] |> TensorTrain for b in bp.b]
+    f = elem_type.(bp.f)
+
     return MPBP(g, w, ϕ, ψ, μ, b, f)
 end
 
