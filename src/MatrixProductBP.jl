@@ -58,6 +58,7 @@ export
     draw_node_observations!, AtomicVector,
     RecursiveBPFactor, DampedFactor, RecursiveTraceFactor, GenericFactor,
     RestrictedRecursiveBPFactor,
+    convert_msg_beliefs,
     der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!
 
 
