@@ -3,9 +3,12 @@ using Unzip: unzip
 using UnPack: @unpack
 using ProgressMeter: Progress, ProgressUnknown, next!
 using InvertedIndices: Not
-using HypergeometricFunctions: _₂F₁
-import MatrixProductBP: FourierMPEM2, FourierMPEM1
-using Nemo: hypergeometric_2f1, AcbField, AcbFieldElem, radius
+# using HypergeometricFunctions: _₂F₁
+import Nemo
+import Nemo: hypergeometric_2f1, AcbField, AcbFieldElem
+using MatrixProductBP: AbstractMPEM2
+include("fourier_tensor_train.jl")
+using Memoization
 
 import Base.ComplexF64
 function complex(x::AcbFieldElem)
@@ -41,7 +44,7 @@ function Fourier3int_1(α::Int, γ::Int, w::Real, J::Float64, P::Float64)
     iszero(kαγ) ? w : sin(kαγ*w)/kαγ
 end
 
-function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
+function convolution(F::Vector{<:MPEM2{U1}}, J::Vector{U2}, P::Float64;
     K::Int=(size(F[1][1],3)-1)/2, svd_trunc=TruncThresh(1e-8), normalize::Bool=true) where {U1<:Number, U2<:Real}
 
     function op((F₁, J₁, d₁), (F₂, J₂, d₂))
@@ -58,7 +61,7 @@ function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
             return collect(Gᵗ)
         end
     
-        G = FourierTensorTrain(GG, z=F₁.z*F₂.z)
+        G = fourier_tensor_train(GG, z=F₁.z*F₂.z)
         compress!(G; svd_trunc)
         normalize && normalize_eachmatrix!(G)
         any(any(isnan, Gᵗ) for Gᵗ in G) && @error "NaN in Fourier tensor train"
@@ -66,50 +69,60 @@ function convolution(F::Vector{FourierMPEM2{U1}}, J::Vector{U2}, P::Float64;
     end
 
     TTinit = [[1/2 for _ in 1:1, _ in 1:1, y in 1:2, x in 1:2] for _ in 1:length(F[1])] |> TensorTrain
-    Ginit = (FourierTensorTrain_spin(TTinit, K, Inf, P, 0.0), 1.0, 0)
+    Ginit = (fourier_tensor_train_spin(TTinit, K, Inf, P, 0.0), 1.0, 0)
     G, full = cavity(zip(F,J,fill(1,length(F))) |> collect, op, Ginit)
     return G, full
 end
 
-function convolution(F::Vector{FourierMPEM1{U1}}, J::Vector{U2}, P::Float64;
+function convolution(F::Vector{MPEM1{U1}}, J::Vector{U2}, P::Float64;
     kw...) where {U1<:Number, U2<:Real}
     F2 = [[(@tullio _[a,b,c,d] := fᵗ[a,b,c] d∈1:2) |> collect for fᵗ in f] for f in F]
-    FMPEM2 = FourierTensorTrain.(F2)
+    FMPEM2 = fourier_tensor_train.(F2)
     convolution(FMPEM2,J,P; kw...)
 end
 
 
 
-function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, y, scale)
-    function _compute_primitive_1(X, β, scale, Jxj, kᵧ, xp1, bb, cc, denom)
-        expon = exp(im*kᵧ*X + β*xp1*(Jxj+scale*X))
+@memoize function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, scale)
+    function _compute_primitive_1(X,β,Jxj,scale,bb)
+        hypgeom = 0.0 + 0.0im
+        precbits = 64
+        while true
+            CC = AcbField(precbits)
+            a_ = CC(1.0)
+            b_ = CC(bb)
+            c_ = CC(1+bb)
+            x_ = CC(-exp(2β*(Jxj+scale*X)))
+            hyp_nemo = hypergeometric_2f1(a_, b_, c_, x_)
+            
+            if !isnan(Float64(real(hyp_nemo))+Float64(real(hyp_nemo)))
+                max((Nemo.radius(real(hyp_nemo))), Nemo.radius(imag(hyp_nemo))) > 1e-12 && @error "Possible numerical instability in hypergeometric function ($hyp_nemo)"
+                hypgeom = complex(hyp_nemo)
+                break
+            end
+            precbits *= 2
+        end
 
-        CC = AcbField(64)
-        a_ = CC(1.0)
-        b_ = CC(bb)
-        c_ = CC(1+bb)
-        x_ = CC(-exp(2β*(Jxj+scale*X)))
-        hypgeom = hypergeometric_2f1(a_, b_, c_, x_)
-
-        isnan(Float64(real(hypgeom))+Float64(real(hypgeom))) && error("NaN in hypergeometric function")
-        max((Nemo.radius(real(hypgeom))), Nemo.radius(imag(hypgeom))) > 0.001 && @error "Possible numerical instability in hypergeometric function ($hypgeom)"
+        isnan(hypgeom) && error("NaN in hypergeometric function")
         
-        return expon * complex(hypgeom) / denom
+        return hypgeom
     end
-    function _compute_primitive_2(X, β, scale, Jxj)
+    function _compute_primitive_2(X)
         a = β*scale * (1 + exp(2β * (Jxj+scale*X)))
         return (2β * (Jxj+scale*X) - log(a)) / (2β*scale)
     end
 
     Jxj = Jⱼᵢ*xⱼᵗ + hᵢ
     if iszero(kᵧ) && xᵢᵗ⁺¹==-1
-        return _compute_primitive_2(y[2], β, scale, Jxj) - _compute_primitive_2(y[1], β, scale, Jxj)
+        return _compute_primitive_2(1.0) - _compute_primitive_2(-1.0)
     else
         xp1 = 1+xᵢᵗ⁺¹
         bb = (xp1 + im*kᵧ/(β*scale)) / 2
-        cc = 1 + bb
         denom = im*kᵧ + β*scale*xp1
-        return _compute_primitive_1(y[2], β, scale, Jxj, kᵧ, xp1, bb, cc, denom) - _compute_primitive_1(y[1], β, scale, Jxj, kᵧ, xp1, bb, cc, denom)
+
+        exp_prim_p1 = exp(im*kᵧ + β*xp1*(Jxj+scale)) * _compute_primitive_1(1.0,β,Jxj,scale,bb)
+        exp_prim_m1 = exp(-im*kᵧ - β*xp1*(Jxj+scale)) * _compute_primitive_1(-1.0,β,Jxj,scale,bb)
+        return (exp_prim_p1 - exp_prim_m1) / denom
     end
 end
 
@@ -121,15 +134,15 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     J, hᵢ, β = float.(wᵢ.J), wᵢ.h, wᵢ.β
     scale1 = dᵢ+ceil(dᵢ/4)
 
-    μ_fourier = [FourierTensorTrain_spin(μ[k], K, scale1, P, σ) for k in idx.(ein)]
+    μ_fourier = [fourier_tensor_train_spin(μ[k], K, scale1, P, σ) for k in idx.(ein)]
     dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, svd_trunc)
     (conv_μ,) = unzip(dest)
 
     for (j, e_out) in enumerate(eout)
         conv_μ_notj = conv_μ[j]
 
-        @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
-        any(isnan, In) && @error "NaN in integral"
+        @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+        any(isnan, In) && error("NaN in integral")
 
         μj = map(eachindex(conv_μ_notj)) do t
             μᵗ₋ⱼ, ϕᵢᵗ = conv_μ_notj[t], ϕᵢ[t]
@@ -146,8 +159,8 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
         bp.μ[idx(e_out)] = μᵢⱼ
     end
 
-    @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, [-1.0,1.0], scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2
-    any(isnan, In) && @error "NaN in integral"
+    @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2
+    any(isnan, In) && error("NaN in integral")
     b = map(eachindex(conv_μ_full)) do t
         μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
         @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹] * ϕᵢᵗ[xᵢᵗ] xⱼᵗ∈1:2
@@ -165,26 +178,15 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     return nothing
 end
 
-function (cb::CB_BP)(bp::MPBP, it::Integer, svd_trunc::SVDTrunc)
-    marg_new = means(cb.f, bp)
-    marg_old = cb.m[end]
-    Δ = isempty(marg_new) ? NaN : maximum(maximum(abs, mn .- mo) for (mn, mo) in zip(marg_new, marg_old))
-    push!(cb.Δs, Δ)
-    push!(cb.m, marg_new)
-    next!(cb.prog, showvalues=[(:Δ,Δ), summary_compact(svd_trunc)])
-    flush(stdout)
-    return Δ
-end
-
 function iterate_fourier!(bp::MPBP, K::Integer; maxiter::Integer=5, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, cb=CB_BP(bp; showprogress), tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, σ::Real=1/50)
     for it in 1:maxiter
         # Threads.@threads for i in nodes
         for i in nodes
             onebpiter_fourier!(bp, i, K; svd_trunc)
         end
-        # Δ = cb(bp, it, svd_trunc)
-        # Δ < tol && return it, cb
+        Δ = cb(bp, it, svd_trunc)
+        Δ < tol && return it, cb
         shuffle_nodes && sample!(nodes, collect(vertices(bp.g)), replace=false)
     end
-    return maxiter
+    return maxiter, cb
 end

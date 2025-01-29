@@ -1,31 +1,25 @@
 const AbstractMPEM1{F} = AbstractTensorTrain{F, 3}
-const AbstractBAMPEM1{F} = BasisTensorTrain{F, 3}
-const MPEM1{F} = TensorTrain{F, 3}
-const FourierMPEM1{F} = FourierTensorTrain{F, 3}
-const PeriodicMPEM1{F} = PeriodicTensorTrain{F, 3}
+const MPEM1{F} = TensorTrain{F, 3, T, Z} where {T, Z}
+const PeriodicMPEM1{F} = PeriodicTensorTrain{F, 3, T, Z} where {T, Z}
 
 # construct a flat mpem with given bond dimensions
-flat_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = flat_tt(bondsizes, q; elem_type)
-flat_fourier_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_fourier_tt(bondsizes, q)
+flat_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = flat_tt(elem_type, bondsizes, q)
+flat_fourier_mpem1(K::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_fourier_tt(bondsizes, K)
 flat_periodic_mpem1(q::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = flat_periodic_tt(bondsizes, q)
 
 # construct a flat mpem with given bond dimensions
 rand_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = rand_tt(bondsizes, q; elem_type)
-rand_fourier_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = rand_fourier_tt(bondsizes, q)
+rand_fourier_mpem1(K::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = rand_fourier_tt(bondsizes, K)
 rand_periodic_mpem1(q::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = rand_periodic_tt(bondsizes, q)
 
 nstates(A::AbstractMPEM1) = size(A[1], 3)
-nstates(A::AbstractBAMPEM1) = error("Number of states is not defined for Basis Tensor Trains")
-ntrunc(A::AbstractBAMPEM1) = size(A[1], 3)
 
 const AbstractMPEM2{F} = AbstractTensorTrain{F, 4}
-const AbstractBAMPEM2{F} = BasisTensorTrain{F, 4}
 const MPEM2{F} = TensorTrain{F, 4}
-const FourierMPEM2{F} = FourierTensorTrain{F, 4}
-const PeriodicMPEM2{F} = PeriodicTensorTrain{F, 4}
+const PeriodicMPEM2{F} = PeriodicTensorTrain{F, 4, T, Z} where {T, Z}
 
 # construct a flat mpem with given bond dimensions
-flat_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = flat_tt(bondsizes, q1, q2; elem_type)
+flat_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = flat_tt(elem_type, bondsizes, q1, q2)
 flat_fourier_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_fourier_tt(bondsizes, q1, q2)
 flat_periodic_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = flat_periodic_tt(bondsizes, q1, q2)
 
@@ -36,9 +30,6 @@ rand_periodic_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) 
 
 function marginalize(A::MPEM2{F}) where F
     MPEM1{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A]; z = A.z)
-end
-function marginalize(A::FourierMPEM2{F}) where F
-    FourierMPEM1{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A], z = A.z)
 end
 function marginalize(A::PeriodicMPEM2{F}) where F
     PeriodicMPEM1{F}([@tullio b[m, n, xi] := a[m, n, xi, xj] for a in A]; z = A.z)
