@@ -171,10 +171,10 @@ function onebpiter_dummy_neighbor(bp::MPBP{G,F,V,MsgType}, i::Integer;
 end
 
 # A callback to print info and save stuff during the iterations 
-struct CB_BP{TP<:ProgressUnknown, F}
+struct CB_BP{TP<:ProgressUnknown, F, U}
     prog :: TP
-    m    :: Vector{Vector{Vector{Float64}}} 
-    Δs   :: Vector{Float64}
+    m    :: Vector{Vector{Vector{U}}} 
+    Δs   :: Vector{U}
     f    :: F
 
     function CB_BP(bp::MPBP; showprogress::Bool=true, f::F=(x,i)->x, info="") where F
@@ -183,8 +183,9 @@ struct CB_BP{TP<:ProgressUnknown, F}
         prog = ProgressUnknown(desc=info*"Running MPBP: iter", dt=dt)
         TP = typeof(prog)
         m = [means(f, bp)]
-        Δs = zeros(0)
-        new{TP,F}(prog, m, Δs, f)
+        U = typeof(bp.f[1])
+        Δs = zeros(U,0)
+        new{TP,F,U}(prog, m, Δs, f)
     end
 end
 
