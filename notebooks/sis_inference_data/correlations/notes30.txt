@@ -1,8 +1,0 @@
-no label -> frac_edges = 0.3, n_edges = 3*N
-label 1  -> frac_edges = 1, n_edges = ne(g)
-label 2  -> frac_edges = 0.4, n_edges = 5*N
-label 3  -> frac_edges = 0.5, n_edges = N
-label 4  -> frac_edges = 0.7, n_edges = 5*N
-label 5  -> frac_edges = 0.2, n_edges = 7*N     ***
-label 6  -> frac_edges = 0.2, n_edges = 10*N
-label 7  -> frac_edges = 0.6, n_edges = 5*N

@@ -1,6 +1,0 @@
-label 1 -> n_edges_corr = 99, n_edges = 1
-label 2 -> n_edges_corr = 20, n_edges = 10*N
-label 3 -> n_edges_corr = 15, n_edges = 7*N
-label 4 -> n_edges_corr = 5, n_edges = 10*N
-label 5 -> n_edges_corr = 10, n_edges = 5*N     ***
-label 6 -> n_edges_corr = 15, n_edges = 5*N

@@ -28,7 +28,7 @@ import HypergeometricFunctions: _₂F₁
 
 export 
     Ising, Glauber, energy,
-    HomogeneousGlauberFactor, GenericGlauberFactor, PMJGlauberFactor, IntegerGlauberFactor, mpbp,
+    GlauberFactor, HomogeneousGlauberFactor, GenericGlauberFactor, PMJGlauberFactor, IntegerGlauberFactor, mpbp,
     equilibrium_magnetization, equilibrium_observables, RandomRegular, ErdosRenyi, CB_Pop,
     SIS, SISFactor, SIRS, SIRSFactor, SIS_heterogeneous, SIS_heterogeneousFactor, SUSCEPTIBLE, INFECTIOUS, RECOVERED,
     kl_marginals, l1_marginals, roc, auc

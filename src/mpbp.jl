@@ -57,15 +57,15 @@ function check_ψs(ψ::Vector{<:Vector{<:Matrix{<:Real}}}, g::IndexedBiDiGraph)
     return true
 end
 
-function mpbp(elem_type::DataType, g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
+function mpbp(::Type{F}, g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
         q::AbstractVector{Int}, T::Int;
         d::Int=1,
         bondsizes=[1; fill(d, T); 1],
         ϕ = [[ones(q[i]) for t in 0:T] for i in vertices(g)],
         ψ = [[ones(q[i],q[j]) for t in 0:T] for (i,j) in edges(g)],
-        μ = [flat_mpem2(q[i],q[j], T; d, bondsizes, elem_type) for (i,j) in edges(g)],
-        b = [flat_mpem1(q[i], T; d, bondsizes, elem_type) for i in vertices(g)],
-        f = zeros(elem_type, nv(g)))
+        μ = [flat_mpem2(F, q[i],q[j], T; d, bondsizes) for (i,j) in edges(g)],
+        b = [flat_mpem1(F, q[i], T; d, bondsizes) for i in vertices(g)],
+        f = zeros(F, nv(g))) where F<:Number
     return MPBP(g, w, ϕ, ψ, μ, b, f)
 end
 function mpbp(g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
@@ -74,14 +74,14 @@ function mpbp(g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
 end
 
 # this function converts the messages and beliefs in a MPBP object to a different element type
-function convert_msg_beliefs(elem_type::DataType, bp::MPBP)
+function convert_msg_beliefs(::Type{F}, bp::MPBP) where F<:Number
     g = deepcopy(bp.g)
     w = deepcopy(bp.w)
     ϕ = deepcopy(bp.ϕ)
     ψ = deepcopy(bp.ψ)
-    μ = [[elem_type.(μᵗ) for μᵗ in μ] |> TensorTrain for μ in bp.μ]
-    b = [[elem_type.(bᵗ) for bᵗ in b] |> TensorTrain for b in bp.b]
-    f = elem_type.(bp.f)
+    μ = [[F.(μᵗ) for μᵗ in μ] |> TensorTrain for μ in bp.μ]
+    b = [[F.(bᵗ) for bᵗ in b] |> TensorTrain for b in bp.b]
+    f = F.(bp.f)
 
     return MPBP(g, w, ϕ, ψ, μ, b, f)
 end

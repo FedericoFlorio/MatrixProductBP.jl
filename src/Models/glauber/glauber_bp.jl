@@ -1,4 +1,14 @@
-struct GenericGlauberFactor{T<:Real}  <: BPFactor 
+struct GlauberFactor{T<:Real} <: BPFactor 
+    J :: Vector{T}      
+    h :: T
+    β :: T
+end
+
+# function GlauberFactor(J::Vector{T}, h::T, β::T) where {T<:Real}
+#     GlauberFactor(J, h, β)
+# end
+
+struct GenericGlauberFactor{T<:Real} <: BPFactor 
     βJ :: Vector{T}      
     βh :: T
 end
@@ -20,7 +30,7 @@ function (fᵢ::GenericGlauberFactor)(xᵢᵗ⁺¹::Integer,
 end
 
 struct HomogeneousGlauberFactor{T<:Real} <: RecursiveBPFactor 
-    βJ :: T     
+    βJ :: T
     βh :: T
 end
 
