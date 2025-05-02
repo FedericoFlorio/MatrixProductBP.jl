@@ -9,6 +9,7 @@ import Nemo: hypergeometric_2f1, AcbField, AcbFieldElem
 using MatrixProductBP: AbstractMPEM2
 include("fourier_tensor_train.jl")
 using Memoization
+using JLD2
 
 import Base.ComplexF64
 function complex(x::AcbFieldElem)
@@ -20,8 +21,8 @@ spin2potts(σ; q=2) = (σ+1)/2*(q-1) + 1
 # potts2spin(x) = 3-2x
 # spin2potts(σ) = (3-σ)/2
 
-Base.cos(x::AbstractTensorTrain, y::AbstractTensorTrain) = dot(x,y) / (norm(x) * norm(y))
-dist(x::AbstractTensorTrain, y::AbstractTensorTrain) = abs(1.0 - cos(x,y))
+# Base.cos(x::AbstractTensorTrain, y::AbstractTensorTrain) = dot(x,y) / (norm(x) * norm(y))
+# dist(x::AbstractTensorTrain, y::AbstractTensorTrain) = abs(1.0 - cos(x,y))
 
 
 
@@ -140,6 +141,7 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
 
     for (j, e_out) in enumerate(eout)
         conv_μ_notj = conv_μ[j]
+        # jldsave("./check_convolution/m_$(src(e_out))-$(dst(e_out)) fourier.jld2"; conv_μ_notj)
 
         @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
         any(isnan, In) && error("NaN in integral")
@@ -182,8 +184,98 @@ function iterate_fourier!(bp::MPBP, K::Integer; maxiter::Integer=5, svd_trunc::S
     for it in 1:maxiter
         # Threads.@threads for i in nodes
         for i in nodes
-            onebpiter_fourier!(bp, i, K; svd_trunc)
+            onebpiter_fourier!(bp, i, K; svd_trunc, σ)
         end
+        Δ = cb(bp, it, svd_trunc)
+        Δ < tol && return it, cb
+        shuffle_nodes && sample!(nodes, collect(vertices(bp.g)), replace=false)
+    end
+    return maxiter, cb
+end
+
+function onebpiter_fourier_infinite_regular!(bp::MPBP, K::Integer; P=2.0, σ=1/50, svd_trunc=TruncThresh(1e-6))
+    @unpack g, w, ϕ, ψ, μ = bp
+    μ = only(μ)
+    wᵢ, ϕᵢ, dᵢ  = w[1][1], ϕ[1], length(edges(g))
+    J, hᵢ, β = float(wᵢ.J[1]), wᵢ.h, wᵢ.β
+    scale = dᵢ+ceil(dᵢ/4)
+
+    μ_fourier = fourier_tensor_train_spin(μ, K, scale, P, σ)
+    jldsave("../check_convolution/m_in fourier.jld2"; μ_fourier)
+
+    function op((F₁, J₁, d₁), (F₂, J₂, d₂))
+        K1 = (size(F₁[1],3)-1)/2 |> Int
+        K2 = (size(F₂[1],3)-1)/2 |> Int
+        @tullio Int_1[γ,α] := Fourier3int_1(α,γ,1.0,J₁,P) α∈-K1:K1, γ∈-K:K
+        @tullio Int_2[γ,β] := Fourier3int_1(β,γ,1.0,J₂,P) β∈-K2:K2, γ∈-K:K
+    
+        GG = map(zip(F₁,F₂)) do (F₁ᵗ, F₂ᵗ)
+            @tullio Gt1[m1,n1,γ,x] := F₁ᵗ[m1,n1,α,x] * Int_1[γ,α]
+            @tullio Gt2[m2,n2,γ,x] := F₂ᵗ[m2,n2,β,x] * Int_2[γ,β]
+            @tullio Gt[m1,m2,n1,n2,γ,x] := 4/P * Gt1[m1,n1,γ,x] * Gt2[m2,n2,γ,x]
+            @cast Gᵗ[(m1,m2),(n1,n2),γ,x] := Gt[m1,m2,n1,n2,γ,x]
+            return collect(Gᵗ)
+        end
+    
+        G = fourier_tensor_train(GG, z=F₁.z*F₂.z)
+        compress!(G; svd_trunc)
+        normalize_eachmatrix!(G)
+        any(any(isnan, Gᵗ) for Gᵗ in G) && @error "NaN in Fourier tensor train"
+        return (G, 1.0, d₁+d₂)
+    end
+
+    TTinit = [[1/2 for _ in 1:1, _ in 1:1, y in 1:2, x in 1:2] for _ in 1:length(μ_fourier)] |> TensorTrain
+    conv = (fourier_tensor_train_spin(TTinit, K, Inf, P, 0.0), 1.0, 0)
+    upd = (μ_fourier,J,1)
+    for d in 1:dᵢ-1
+        conv = op(conv, upd)
+    end
+    conv_full = op(conv, upd)
+
+    (conv_μ,), (conv_μ_full,) = conv, conv_full
+    jldsave("../check_convolution/m_1-1 fourier.jld2"; conv_μ)
+
+
+    @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J,potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+    any(isnan, In) && error("NaN in integral")
+
+    μout = map(eachindex(conv_μ)) do t
+        μᵗ, ϕᵢᵗ = conv_μ[t], ϕᵢ[t]
+        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ] * ϕᵢᵗ[xᵢᵗ]
+        return Aᵗ
+    end
+    μᵀ, ϕᵢᵀ = conv_μ[end], ϕᵢ[end]
+    @tullio μoutᵀ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵀ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
+    μout[end] = μoutᵀ
+    μᵢⱼ = collect.(μout) |> MPEM3 |> mpem2
+
+    compress!(μᵢⱼ; svd_trunc)
+    normalize!(μᵢⱼ)
+    bp.μ[1] = μᵢⱼ
+
+
+    @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2
+    any(isnan, In) && error("NaN in integral")
+    b = map(eachindex(conv_μ_full)) do t
+        μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
+        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹] * ϕᵢᵗ[xᵢᵗ] xⱼᵗ∈1:2
+        return Aᵗ
+    end
+    μ_fullᵀ, ϕᵢᵀ = conv_μ_full[end], ϕᵢ[end]
+    @tullio bT[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵀ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
+    b[end] = bT
+    belief = collect.(b) |> MPEM3 |> mpem2 |> marginalize
+
+    compress!(belief; svd_trunc)
+    normalize!(belief)
+    bp.b[1] = belief
+
+    return nothing
+end
+
+function iterate_fourier_infinite_regular!(bp::MPBP, K::Integer; maxiter::Integer=5, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, cb=CB_BP(bp; showprogress), tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, σ::Real=1/50)
+    for it in 1:maxiter
+        onebpiter_fourier_infinite_regular!(bp, K; σ, svd_trunc)
         Δ = cb(bp, it, svd_trunc)
         Δ < tol && return it, cb
         shuffle_nodes && sample!(nodes, collect(vertices(bp.g)), replace=false)

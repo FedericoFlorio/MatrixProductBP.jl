@@ -3,12 +3,14 @@ const MPEM1{F} = TensorTrain{F, 3, T, Z} where {T, Z}
 const PeriodicMPEM1{F} = PeriodicTensorTrain{F, 3, T, Z} where {T, Z}
 
 # construct a flat mpem with given bond dimensions
-flat_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = flat_tt(elem_type, bondsizes, q)
+flat_mpem1(::Type{F}, q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) where F = flat_tt(F, bondsizes, q)
+flat_mpem1(q::Int, T::Int; kw...) = flat_mpem1(Float64, q, T; kw...)
 flat_fourier_mpem1(K::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_fourier_tt(bondsizes, K)
 flat_periodic_mpem1(q::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = flat_periodic_tt(bondsizes, q)
 
 # construct a random mpem with given bond dimensions
-rand_mpem1(q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = rand_tt(bondsizes, q; elem_type)
+rand_mpem1(::Type{F}, q::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) where F = rand_tt(F, bondsizes, q)
+rand_mpem1(q::Int, T::Int; kw...) = rand_mpem1(Float64, q, T; kw...)
 rand_fourier_mpem1(K::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = rand_fourier_tt(bondsizes, K)
 rand_periodic_mpem1(q::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = rand_periodic_tt(bondsizes, q)
 
@@ -19,12 +21,14 @@ const MPEM2{F} = TensorTrain{F, 4}
 const PeriodicMPEM2{F} = PeriodicTensorTrain{F, 4, T, Z} where {T, Z}
 
 # construct a flat mpem with given bond dimensions
-flat_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = flat_tt(elem_type, bondsizes, q1, q2)
+flat_mpem2(::Type{F}, q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) where F = flat_tt(F, bondsizes, q1, q2)
+flat_mpem2(q1::Int, q2::Int, T::Int; kw...) = flat_mpem2(Float64, q1, q2, T; kw...)
 flat_fourier_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = flat_fourier_tt(bondsizes, q1, q2)
 flat_periodic_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = flat_periodic_tt(bondsizes, q1, q2)
 
 # construct a flat mpem with given bond dimensions
-rand_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1], elem_type) = rand_tt(bondsizes, q1, q2; elem_type)
+rand_mpem2(::Type{F}, q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) where F = rand_tt(F, bondsizes, q1, q2)
+rand_mpem2(q1::Int, q2::Int, T::Int; kw...) = rand_mpem2(Float64, q1, q2, T; kw...)
 rand_fourier_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=[1; fill(d, T); 1]) = rand_fourier_tt(bondsizes, q1, q2)
 rand_periodic_mpem2(q1::Int, q2::Int, T::Int; d::Int=2, bondsizes=fill(d, T+1)) = rand_periodic_tt(bondsizes, q1, q2)
 

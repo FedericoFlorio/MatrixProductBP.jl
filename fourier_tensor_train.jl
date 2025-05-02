@@ -1,6 +1,7 @@
 using Tullio: @tullio
 using TensorTrains
 using TensorTrains: check_bond_dims
+using OffsetArrays: OffsetArray
 
 # Fourier basis functions
 f_n(n::Int, P::Float64) = x -> exp(-im*2π/P*n*x)
@@ -276,6 +277,7 @@ function marginals_fourier(A::TensorTrain{F,N}, P::Float64) where {F<:Complex,N}
     firstindex(A[1],3) == -K || throw(ArgumentError("The Fourier basis functions must be centered at 0"))
     pF = marginals(A)
     map(pF) do pFᵗ
+        pFᵗ = OffsetArray(pFᵗ, -K:K)
         norm2 = sum(abs2,pFᵗ)/P
         pFᵗ ./= sqrt(norm2)
         x -> sum(pFᵗ[n]*F_n(n,P)(x) for n in -K:K) |> real
