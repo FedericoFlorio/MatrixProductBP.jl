@@ -128,14 +128,14 @@ end
 end
 
 
-function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, svd_trunc=TruncThresh(1e-6))
+function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, svd_trunc=TruncThresh(1e-6), damp=0.0)
     @unpack g, w, ϕ, ψ, μ = bp
     ein, eout = inedges(g,i), outedges(g, i)
     wᵢ, ϕᵢ, dᵢ  = w[i][1], ϕ[i], length(ein)
     J, hᵢ, β = float.(wᵢ.J), wᵢ.h, wᵢ.β
-    scale1 = dᵢ+ceil(dᵢ/4)
+    scale = dᵢ+ceil(dᵢ/4)
 
-    μ_fourier = [fourier_tensor_train_spin(μ[k], K, scale1, P, σ) for k in idx.(ein)]
+    μ_fourier = [fourier_tensor_train_spin(μ[k], K, scale, P, σ) for k in idx.(ein)]
     dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, svd_trunc)
     (conv_μ,) = unzip(dest)
 
@@ -143,7 +143,7 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
         conv_μ_notj = conv_μ[j]
         # jldsave("./check_convolution/m_$(src(e_out))-$(dst(e_out)) fourier.jld2"; conv_μ_notj)
 
-        @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+        @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
         any(isnan, In) && error("NaN in integral")
 
         μj = map(eachindex(conv_μ_notj)) do t
@@ -158,10 +158,11 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
 
         compress!(μᵢⱼ; svd_trunc)
         normalize!(μᵢⱼ)
-        bp.μ[idx(e_out)] = μᵢⱼ
+        # bp.μ[idx(e_out)] = μᵢⱼ
+        set_msg!(bp, μᵢⱼ, idx(e_out), damp, svd_trunc)
     end
 
-    @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale1) γ∈-K:K, xᵢᵗ⁺¹∈1:2
+    @tullio In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2
     any(isnan, In) && error("NaN in integral")
     b = map(eachindex(conv_μ_full)) do t
         μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
@@ -180,15 +181,16 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     return nothing
 end
 
-function iterate_fourier!(bp::MPBP, K::Integer; maxiter::Integer=5, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, cb=CB_BP(bp; showprogress), tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, σ::Real=1/50)
+function iterate_fourier!(bp::MPBP, K::Integer; maxiter::Integer=5, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, cb=CB_BP(bp; showprogress), tol=1e-10, nodes=collect(vertices(bp.g)), shuffle_nodes::Bool=true, σ::Real=1/50, damp=0.0)
     for it in 1:maxiter
-        # Threads.@threads for i in nodes
-        for i in nodes
-            onebpiter_fourier!(bp, i, K; svd_trunc, σ)
+        Threads.@threads for i in nodes
+        # for i in nodes
+            onebpiter_fourier!(bp, i, K; svd_trunc, σ, damp)
         end
         Δ = cb(bp, it, svd_trunc)
         Δ < tol && return it, cb
         shuffle_nodes && sample!(nodes, collect(vertices(bp.g)), replace=false)
+        println("Iteration $(it) completed")
     end
     return maxiter, cb
 end
@@ -201,7 +203,6 @@ function onebpiter_fourier_infinite_regular!(bp::MPBP, K::Integer; P=2.0, σ=1/5
     scale = dᵢ+ceil(dᵢ/4)
 
     μ_fourier = fourier_tensor_train_spin(μ, K, scale, P, σ)
-    jldsave("../check_convolution/m_in fourier.jld2"; μ_fourier)
 
     function op((F₁, J₁, d₁), (F₂, J₂, d₂))
         K1 = (size(F₁[1],3)-1)/2 |> Int
@@ -233,8 +234,6 @@ function onebpiter_fourier_infinite_regular!(bp::MPBP, K::Integer; P=2.0, σ=1/5
     conv_full = op(conv, upd)
 
     (conv_μ,), (conv_μ_full,) = conv, conv_full
-    jldsave("../check_convolution/m_1-1 fourier.jld2"; conv_μ)
-
 
     @tullio In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J,potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
     any(isnan, In) && error("NaN in integral")
@@ -279,6 +278,7 @@ function iterate_fourier_infinite_regular!(bp::MPBP, K::Integer; maxiter::Intege
         Δ = cb(bp, it, svd_trunc)
         Δ < tol && return it, cb
         shuffle_nodes && sample!(nodes, collect(vertices(bp.g)), replace=false)
+        println("Iteration $(it) completed")
     end
     return maxiter, cb
 end
