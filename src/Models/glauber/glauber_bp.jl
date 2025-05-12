@@ -4,6 +4,18 @@ struct GlauberFactor{T<:Real} <: BPFactor
     β :: T
 end
 
+function (fᵢ::GlauberFactor)(xᵢᵗ⁺¹::Integer, 
+    xₙᵢᵗ::AbstractVector{<:Integer}, 
+    xᵢᵗ::Integer)
+    @assert xᵢᵗ⁺¹ ∈ 1:2
+    @assert all(x ∈ 1:2 for x in xₙᵢᵗ)
+    @assert length(xₙᵢᵗ) == length(fᵢ.J)
+
+    hⱼᵢ = sum( Jᵢⱼ * potts2spin(xⱼᵗ) for (xⱼᵗ,Jᵢⱼ) in zip(xₙᵢᵗ, fᵢ.J))
+    E = - fᵢ.β * (potts2spin(xᵢᵗ⁺¹) * (hⱼᵢ + fᵢ.h))
+    return 1 / (1 + exp(2E))
+end
+
 # function GlauberFactor(J::Vector{T}, h::T, β::T) where {T<:Real}
 #     GlauberFactor(J, h, β)
 # end

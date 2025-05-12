@@ -211,6 +211,7 @@ function iterate!(bp::MPBP{G,F,V,MsgType}; maxiter::Integer=5,
         Δ = cb(bp, it, svd_trunc)
         Δ < tol && return it, cb
         shuffle_nodes && sample!(nodes, collect(vertices(bp.g)), replace=false)
+        println("Iteration $(it) completed")
     end
     return maxiter, cb
 end
