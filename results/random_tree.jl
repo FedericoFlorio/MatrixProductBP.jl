@@ -23,7 +23,7 @@ g = IndexedGraph(gg)
 J = 0.7
 h = 0.2*0.7
 m⁰ = 0.7
-K = 100
+K = 20
 
 ϕᵢ = [t == 0 ? [(1-m⁰)/2, (1+m⁰)/2] : ones(2) for t in 0:T]
 ϕ = fill(ϕᵢ, nv(g))
@@ -36,24 +36,23 @@ w_fourier = [fill(GlauberFactor(fill(J,length(inedges(g,i))), h, β), T+1) for i
 bp_fourier = mpbp(ComplexF64, g_, w_fourier, fill(2, nv(g)), T; ϕ)
 
 matrix_sizes = [5, 10, 15]
-maxiters = [0, 0, 60]
+maxiters = [0, 20, 0]
 iters = zeros(Int, length(maxiters))
 tol = -1
 for i in eachindex(maxiters)
     iters[i], _ = iterate!(bp; maxiter=maxiters[i], svd_trunc=TruncBond(matrix_sizes[i]), tol)
 end
 
-# iters_fourier = zeros(Int, length(maxiters))
-# for i in eachindex(maxiters)
-#     iters_fourier[i], cb_fourier = iterate_fourier!(bp_fourier, K, maxiter=maxiters[i], σ=1/100; svd_trunc=TruncBond(matrix_sizes[i]), tol, damp=0.1)
-# end
+iters_fourier = zeros(Int, length(maxiters))
+for i in eachindex(maxiters)
+    iters_fourier[i], cb_fourier = iterate_fourier!(bp_fourier, K, maxiter=maxiters[i], σ=1/100; svd_trunc=TruncBond(matrix_sizes[i]), tol)
+end
+
+import MatrixProductBP.Models:  potts2spin
 
 nsamples = 10^6
 sms = SoftMarginSampler(bp)
 sample!(sms, nsamples)
-
-potts2spin(x, i; q=2) = (x-1)/(q-1)*2 - 1
-
 
 using JLD2
 

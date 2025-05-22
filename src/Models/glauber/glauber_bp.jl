@@ -16,10 +16,6 @@ function (fᵢ::GlauberFactor)(xᵢᵗ⁺¹::Integer,
     return 1 / (1 + exp(2E))
 end
 
-# function GlauberFactor(J::Vector{T}, h::T, β::T) where {T<:Real}
-#     GlauberFactor(J, h, β)
-# end
-
 struct GenericGlauberFactor{T<:Real} <: BPFactor 
     βJ :: Vector{T}      
     βh :: T
@@ -62,7 +58,7 @@ function prob_y(wᵢ::HomogeneousGlauberFactor, xᵢᵗ⁺¹, xᵢᵗ, zᵗ, d)
     return 1 / (1 + exp(2E))
 end
 
-prob_xy(wᵢ::HomogeneousGlauberFactor, yₖ, xₖ, xᵢ) = (yₖ != xₖ)
+prob_xy(wᵢ::HomogeneousGlauberFactor, yₖ, xₖ, xᵢ) = (yₖ == xₖ)
 prob_yy(wᵢ::HomogeneousGlauberFactor, y, y1, y2, xᵢ) = (y == y1 + y2 - 1)
 
 function (wᵢ::HomogeneousGlauberFactor)(xᵢᵗ⁺¹::Integer, 
