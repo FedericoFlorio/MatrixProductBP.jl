@@ -3,7 +3,7 @@ module MatrixProductBP
 using InvertedIndices: Not
 using ProgressMeter: Progress, ProgressUnknown, next!
 using TensorCast: @reduce, @cast, TensorCast
-using LoopVectorization
+# using LoopVectorization
 using Tullio: @tullio
 using IndexedGraphs: IndexedGraphs, AbstractIndexedDiGraph, IndexedGraph, IndexedBiDiGraph,
     nv, ne, edges, vertices, inedges, outedges, src, dst, idx, neighbors, IndexedEdge,
@@ -23,6 +23,9 @@ using CavityTools: cavity
 using LogarithmicNumbers: ULogarithmic, Logarithmic
 using LinearAlgebra: I, tr
 using Kronecker: kronecker
+using Nemo
+using Nemo: hypergeometric_2f1, AcbField, AcbFieldElem
+using Memoization: @memoize
 
 using TensorTrains:
     TensorTrains,
@@ -68,6 +71,8 @@ export
     RestrictedRecursiveBPFactor,
     convert_msg_beliefs,
     der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!,
+    fourier_tensor_train, flat_fourier_tt, rand_fourier_tt, fourier_tensor_train_spin, marginals_fourier,
+    onebpiter_fourier!, iterate_fourier!,
     mpbp_stationary, mpbp_stationary_infinite_graph, mpbp_stationary_infinite_bipartite_graph,
     CB_BPVUMPS, TruncVUMPS,
     mean_with_uncertainty
@@ -88,4 +93,7 @@ include("sis_inference.jl")
 
 include("Models/Models.jl")
 
-end # end module
+include("fourier/fourier_tensor_train.jl")
+include("fourier/bp_fourier.jl")
+
+end

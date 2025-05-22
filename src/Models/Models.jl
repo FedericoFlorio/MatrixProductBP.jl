@@ -31,7 +31,8 @@ export
     GlauberFactor, HomogeneousGlauberFactor, GenericGlauberFactor, PMJGlauberFactor, IntegerGlauberFactor, mpbp, mpbp_stationary,
     equilibrium_magnetization, equilibrium_observables, RandomRegular, ErdosRenyi, CB_Pop,
     SIS, SISFactor, SIRS, SIRSFactor, SIS_heterogeneous, SIS_heterogeneousFactor, SUSCEPTIBLE, INFECTIOUS, RECOVERED,
-    kl_marginals, l1_marginals, roc, auc
+    kl_marginals, l1_marginals, roc, auc,
+    potts2spin
 
 include("glauber/glauber.jl")
 include("glauber/glauber_bp.jl")
