@@ -3,25 +3,12 @@ function complex(x::AcbFieldElem)
     return ComplexF64(Float64(real(x)), Float64(imag(x)))
 end
 
-import MatrixProductBP.Models: potts2spin
-import MatrixProductBP.Models: spin2potts
-
-
 """
-    Fourier3int(α::Int, β::Int, γ::Int; w₁::Float64=0.5, w₂::Float64=0.5, J1::Float64=1.0, J2::Float64=1.0, P::Float64=2.0)
+    _fourier3int(α::Int, γ::Int; w::Float64=0.5, J::Float64=1.0, P::Float64=2.0)
 
-Computes the integral ``∫dx₁ ∫dx₂ F_α(x₁) F_β(x₂) F*_γ(J₁x₁+J₂x₂)``. The integrations ranges are ``[-w₁,+w₁]`` for the integral in ``dx₁`` and ``[-w₂,+w₂]`` for the integral in ``dx₂``
+Computes the integral ``∫dx F_α(x) F*_γ(Jx)``. The integrations ranges are ``[-w,+w]``. This is part of the calculation of the integral ``∫dx₁ ∫dx₂ F_α(x₁) F_β(x₂) F*_γ(J₁x₁+J₂x₂)``.
 """
-function Fourier3int(α::Int, β::Int, γ::Int, w₁::Real, w₂::Real, J1::Float64, J2::Float64, P::Float64)
-    kαγ = 2π/P*(α-J1*γ)
-    kβγ = 2π/P*(β-J2*γ)
-    I1 = iszero(kαγ) ? w₁ : sin(kαγ*w₁)/kαγ
-    I2 = iszero(kβγ) ? w₂ : sin(kβγ*w₂)/kβγ
-
-    return 4/P * I1 * I2
-end
-
-function Fourier3int_1(α::Int, γ::Int, w::Real, J::Float64, P::Float64)
+function _fourier3int(α::Int, γ::Int, w::Real, J::Float64, P::Float64)
     kαγ = 2π/P*(α-J*γ)
     iszero(kαγ) ? w : sin(kαγ*w)/kαγ
 end
@@ -32,8 +19,8 @@ function convolution(F::Vector{<:MPEM2{U1}}, J::Vector{U2}, P::Float64;
     function op((F₁, J₁, d₁), (F₂, J₂, d₂))
         K1 = (size(F₁[1],3)-1)/2 |> Int
         K2 = (size(F₂[1],3)-1)/2 |> Int
-        @tullio Int_1[γ,α] := Fourier3int_1(α,γ,1.0,J₁,P) α∈-K1:K1, γ∈-K:K
-        @tullio Int_2[γ,β] := Fourier3int_1(β,γ,1.0,J₂,P) β∈-K2:K2, γ∈-K:K
+        @tullio Int_1[γ,α] := _fourier3int(α,γ,1.0,J₁,P) α∈-K1:K1, γ∈-K:K
+        @tullio Int_2[γ,β] := _fourier3int(β,γ,1.0,J₂,P) β∈-K2:K2, γ∈-K:K
     
         GG = map(zip(F₁,F₂)) do (F₁ᵗ, F₂ᵗ)
             @tullio Gt1[m1,n1,γ,x] := F₁ᵗ[m1,n1,α,x] * Int_1[γ,α]
@@ -62,7 +49,6 @@ function convolution(F::Vector{MPEM1{U1}}, J::Vector{U2}, P::Float64;
     FMPEM2 = fourier_tensor_train.(F2)
     convolution(FMPEM2,J,P; kw...)
 end
-
 
 
 @memoize function _compute_integral(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, scale)
@@ -109,6 +95,39 @@ end
 end
 
 
+function _f_bp_msg_fourier(conv_μ_notj, ϕᵢ, β, J, hᵢ, scale, P, K)
+    @tullio avx=false In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J,potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
+    any(isnan, In) && error("NaN in integral")
+
+    μj = map(eachindex(conv_μ_notj)) do t
+        μᵗ₋ⱼ, ϕᵢᵗ = conv_μ_notj[t], ϕᵢ[t]
+        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵗ₋ⱼ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ] * ϕᵢᵗ[xᵢᵗ]
+        return Aᵗ
+    end
+    μᵀ₋ⱼ, ϕᵢᵀ = conv_μ_notj[end], ϕᵢ[end]
+    @tullio μjᵀ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵀ₋ⱼ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
+    μj[end] = μjᵀ
+
+    return collect.(μj) |> MPEM3 |> mpem2
+end
+
+function _f_bp_belief_fourier(conv_μ_full, ϕᵢ, β, hᵢ, scale, P, K)
+    @tullio avx=false In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2
+    any(isnan, In) && error("NaN in integral")
+
+    b = map(eachindex(conv_μ_full)) do t
+        μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
+        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹] * ϕᵢᵗ[xᵢᵗ] xⱼᵗ∈1:2
+        return Aᵗ
+    end
+    μ_fullᵀ, ϕᵢᵀ = conv_μ_full[end], ϕᵢ[end]
+    @tullio bT[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵀ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
+    b[end] = bT
+
+    return collect.(b) |> MPEM3 |> mpem2 |> marginalize
+end
+
+
 function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, svd_trunc=TruncThresh(1e-6), damp=0.0)
     @unpack g, w, ϕ, ψ, μ = bp
     ein, eout = inedges(g,i), outedges(g, i)
@@ -122,37 +141,13 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
 
     for (j, e_out) in enumerate(eout)
         conv_μ_notj = conv_μ[j]
-
-        @tullio avx=false In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J[$j],potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
-        any(isnan, In) && error("NaN in integral")
-
-        μj = map(eachindex(conv_μ_notj)) do t
-            μᵗ₋ⱼ, ϕᵢᵗ = conv_μ_notj[t], ϕᵢ[t]
-            @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵗ₋ⱼ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ] * ϕᵢᵗ[xᵢᵗ]
-            return Aᵗ
-        end
-        μᵀ₋ⱼ, ϕᵢᵀ = conv_μ_notj[end], ϕᵢ[end]
-        @tullio μjᵀ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵀ₋ⱼ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
-        μj[end] = μjᵀ
-        μᵢⱼ = collect.(μj) |> MPEM3 |> mpem2
-
+        μᵢⱼ = _f_bp_msg_fourier(conv_μ_notj, ϕᵢ, β, J[j], hᵢ, scale, P, K)
         compress!(μᵢⱼ; svd_trunc)
         normalize!(μᵢⱼ)
         set_msg!(bp, μᵢⱼ, idx(e_out), damp, svd_trunc)
     end
 
-    @tullio avx=false In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2
-    any(isnan, In) && error("NaN in integral")
-    b = map(eachindex(conv_μ_full)) do t
-        μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
-        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹] * ϕᵢᵗ[xᵢᵗ] xⱼᵗ∈1:2
-        return Aᵗ
-    end
-    μ_fullᵀ, ϕᵢᵀ = conv_μ_full[end], ϕᵢ[end]
-    @tullio bT[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵀ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
-    b[end] = bT
-    belief = collect.(b) |> MPEM3 |> mpem2 |> marginalize
-
+    belief = _f_bp_belief_fourier(conv_μ_full, ϕᵢ, β, hᵢ, scale, P, K)
     compress!(belief; svd_trunc)
     normalize!(belief)
     bp.b[i] = belief
@@ -186,8 +181,8 @@ function onebpiter_fourier_infinite_regular!(bp::MPBP, K::Integer; P=2.0, σ=1/5
     function op((F₁, J₁, d₁), (F₂, J₂, d₂))
         K1 = (size(F₁[1],3)-1)/2 |> Int
         K2 = (size(F₂[1],3)-1)/2 |> Int
-        @tullio avx=false Int_1[γ,α] := Fourier3int_1(α,γ,1.0,J₁,P) α∈-K1:K1, γ∈-K:K
-        @tullio avx=false Int_2[γ,β] := Fourier3int_1(β,γ,1.0,J₂,P) β∈-K2:K2, γ∈-K:K
+        @tullio avx=false Int_1[γ,α] := _fourier3int(α,γ,1.0,J₁,P) α∈-K1:K1, γ∈-K:K
+        @tullio avx=false Int_2[γ,β] := _fourier3int(β,γ,1.0,J₂,P) β∈-K2:K2, γ∈-K:K
     
         GG = map(zip(F₁,F₂)) do (F₁ᵗ, F₂ᵗ)
             @tullio Gt1[m1,n1,γ,x] := F₁ᵗ[m1,n1,α,x] * Int_1[γ,α]
@@ -211,39 +206,14 @@ function onebpiter_fourier_infinite_regular!(bp::MPBP, K::Integer; P=2.0, σ=1/5
         conv = op(conv, upd)
     end
     conv_full = op(conv, upd)
-
     (conv_μ,), (conv_μ_full,) = conv, conv_full
 
-    @tullio avx=false In[γ,xᵢᵗ⁺¹,xⱼᵗ] := _compute_integral(β,J,potts2spin(xⱼᵗ),hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2, xⱼᵗ∈1:2
-    any(isnan, In) && error("NaN in integral")
-
-    μout = map(eachindex(conv_μ)) do t
-        μᵗ, ϕᵢᵗ = conv_μ[t], ϕᵢ[t]
-        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ] * ϕᵢᵗ[xᵢᵗ]
-        return Aᵗ
-    end
-    μᵀ, ϕᵢᵀ = conv_μ[end], ϕᵢ[end]
-    @tullio μoutᵀ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μᵀ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
-    μout[end] = μoutᵀ
-    μᵢⱼ = collect.(μout) |> MPEM3 |> mpem2
-
+    μᵢⱼ = _f_bp_msg_fourier(conv_μ, ϕᵢ, β, J[1], hᵢ, scale, P, K)
     compress!(μᵢⱼ; svd_trunc)
     normalize!(μᵢⱼ)
     bp.μ[1] = μᵢⱼ
 
-
-    @tullio avx=false In[γ,xᵢᵗ⁺¹] := _compute_integral(β,0.0,0.0,hᵢ,potts2spin(xᵢᵗ⁺¹),2π*γ/P, scale) γ∈-K:K, xᵢᵗ⁺¹∈1:2
-    any(isnan, In) && error("NaN in integral")
-    b = map(eachindex(conv_μ_full)) do t
-        μ_fullᵗ, ϕᵢᵗ = conv_μ_full[t], ϕᵢ[t]
-        @tullio Aᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹] * ϕᵢᵗ[xᵢᵗ] xⱼᵗ∈1:2
-        return Aᵗ
-    end
-    μ_fullᵀ, ϕᵢᵀ = conv_μ_full[end], ϕᵢ[end]
-    @tullio bT[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := μ_fullᵀ[m,n,0,xᵢᵗ] * P * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:2, xᵢᵗ⁺¹∈1:2
-    b[end] = bT
-    belief = collect.(b) |> MPEM3 |> mpem2 |> marginalize
-
+    belief = _f_bp_belief_fourier(conv_μ_full, ϕᵢ, β, hᵢ, scale, P, K)
     compress!(belief; svd_trunc)
     normalize!(belief)
     bp.b[1] = belief

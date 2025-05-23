@@ -26,6 +26,7 @@ using Kronecker: kronecker
 using Nemo
 using Nemo: hypergeometric_2f1, AcbField, AcbFieldElem
 using Memoization: @memoize
+using OffsetArrays
 
 using TensorTrains:
     TensorTrains,
@@ -38,9 +39,6 @@ using TensorTrains:
     marginals, twovar_marginals, normalization, normalize!,
     svd, _compose, accumulate_L, accumulate_R,
     InfiniteUniformTensorTrain, flat_infinite_uniform_tt, TruncVUMPS, dot
-    
-    using TensorTrains
-    using OffsetArrays
 
 export 
     SVDTrunc, TruncBond, TruncThresh, TruncBondMax, TruncBondThresh,
@@ -72,7 +70,7 @@ export
     convert_msg_beliefs,
     der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!,
     fourier_tensor_train, flat_fourier_tt, rand_fourier_tt, fourier_tensor_train_spin, marginals_fourier,
-    onebpiter_fourier!, iterate_fourier!,
+    onebpiter_fourier!, iterate_fourier!, onebpiter_fourier_infinite_regular!, iterate_fourier_infinite_regular!,
     mpbp_stationary, mpbp_stationary_infinite_graph, mpbp_stationary_infinite_bipartite_graph,
     CB_BPVUMPS, TruncVUMPS,
     mean_with_uncertainty
@@ -92,6 +90,7 @@ include("stationary.jl")
 include("sis_inference.jl")
 
 include("Models/Models.jl")
+using .Models: potts2spin, spin2potts
 
 include("fourier/fourier_tensor_train.jl")
 include("fourier/bp_fourier.jl")
