@@ -8,8 +8,6 @@ import ProgressMeter; ProgressMeter.ijulia_behavior(:clear)
 using TensorTrains: summary_compact
 using SparseArrays
 using Plots
-include("../fourier_tensor_train.jl")
-include("../bp_fourier.jl")
 
 seed = 2
 rng = MersenneTwister(seed)

@@ -26,13 +26,13 @@ import Lazy: @forward
 import LinearAlgebra: issymmetric
 import HypergeometricFunctions: _₂F₁
 
-export 
+export
     Ising, Glauber, energy,
     GlauberFactor, HomogeneousGlauberFactor, GenericGlauberFactor, PMJGlauberFactor, IntegerGlauberFactor, mpbp,
     equilibrium_magnetization, equilibrium_observables, RandomRegular, ErdosRenyi, CB_Pop,
     SIS, SISFactor, SIRS, SIRSFactor, SIS_heterogeneous, SIS_heterogeneousFactor, SUSCEPTIBLE, INFECTIOUS, RECOVERED,
     kl_marginals, l1_marginals, roc, auc,
-    potts2spin
+    potts2spin, spin2potts
 
 include("glauber/glauber.jl")
 include("glauber/glauber_bp.jl")
