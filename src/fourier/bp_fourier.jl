@@ -231,3 +231,45 @@ function iterate_fourier_infinite_regular!(bp::MPBP, K::Integer; maxiter::Intege
     end
     return maxiter, cb
 end
+
+function onebpiter_fourier_popdyn!(μ, K, wᵢ, dᵢ, ϕᵢ, svd_trunc, P, σ)
+    wᵢᵗ = wᵢ[1]
+    J, hᵢ, β = float.(wᵢᵗ.J), wᵢᵗ.h, wᵢᵗ.β
+    scale = dᵢ + ceil(dᵢ/4)
+
+    μ_fourier = [fourier_tensor_train_spin(μk, K, scale, P, σ) for μk in μ]
+    @show typeof(μ_fourier)
+    dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, svd_trunc)
+    (conv_μ,) = unzip(dest)
+
+    for j in eachindex(conv_μ)
+        conv_μ_notj = conv_μ[j]
+        μⱼ = _f_bp_msg_fourier(conv_μ_notj, ϕᵢ, β, J[j], hᵢ, scale, P, K)
+        compress!(μⱼ; svd_trunc)
+        normalize!(μⱼ)
+        μ[j] = μⱼ
+    end
+    belief = _f_bp_belief_fourier(conv_μ_full, ϕᵢ, β, hᵢ, scale, P, K)
+    compress!(belief; svd_trunc)
+    normalize!(belief)
+    
+    return μ, belief
+end
+
+function iterate_fourier_popdyn!(μ_pop, popsize, bs, bs2var, prob_degree, prob_J, prob_h, K::Integer, β, ϕᵢ, T; maxiter=100, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, tol=1e-10, P::Real=2.0, σ::Real=1/50)
+    @showprogress for it in 1:maxiter
+        dᵢ = rand(prob_degree)
+        dᵢ > popsize-1 && error("Sampled degree $(dᵢ) greater than population size $popsize")
+        dᵢ < 1 && continue
+
+        indices = rand(eachindex(μ_pop), dᵢ)
+        J = rand(prob_J, dᵢ)
+        h = rand(prob_h)
+        wᵢ = fill(GlauberFactor(J, h, β), T+1)
+
+        μ, b = onebpiter_fourier_popdyn!(deepcopy(μ_pop[indices]), K, wᵢ, dᵢ, ϕᵢ, svd_trunc, P, σ)
+        μ_pop[indices] .= μ
+        push!(bs, [real.(m) for m in marginals(b)])
+        push!(bs2var, [real.(m) for m in twovar_marginals(b)])
+    end
+end
