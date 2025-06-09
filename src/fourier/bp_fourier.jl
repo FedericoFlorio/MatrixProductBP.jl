@@ -13,8 +13,7 @@ function _fourier3int(α::Int, γ::Int, w::Real, J::Float64, P::Float64)
     iszero(kαγ) ? w : sin(kαγ*w)/kαγ
 end
 
-function convolution(F::Vector{<:MPEM2{U1}}, J::Vector{U2}, P::Float64;
-    K::Int=(size(F[1][1],3)-1)/2, svd_trunc=TruncThresh(1e-8), normalize::Bool=true) where {U1<:Number, U2<:Real}
+function convolution(F::Vector{<:MPEM2{U1}}, J::Vector{U2}, P::Float64, T::Integer; K::Int=(size(F[1][1],3)-1)/2, svd_trunc=TruncThresh(1e-8), normalize::Bool=true) where {U1<:Number, U2<:Real}
 
     function op((F₁, J₁, d₁), (F₂, J₂, d₂))
         K1 = (size(F₁[1],3)-1)/2 |> Int
@@ -37,17 +36,17 @@ function convolution(F::Vector{<:MPEM2{U1}}, J::Vector{U2}, P::Float64;
         return (G, 1.0, d₁+d₂)
     end
 
-    TTinit = [[1/2 for _ in 1:1, _ in 1:1, y in 1:2, x in 1:2] for _ in 1:length(F[1])] |> TensorTrain
+    TTinit = [[1/2 for _ in 1:1, _ in 1:1, y in 1:2, x in 1:2] for _ in 1:T+1] |> TensorTrain
     Ginit = (fourier_tensor_train_spin(TTinit, K, Inf, P, 0.0), 1.0, 0)
     G, full = cavity(zip(F,J,fill(1,length(F))) |> collect, op, Ginit)
     return G, full
 end
 
-function convolution(F::Vector{MPEM1{U1}}, J::Vector{U2}, P::Float64;
+function convolution(F::Vector{MPEM1{U1}}, J::Vector{U2}, P::Float64, T::Integer;
     kw...) where {U1<:Number, U2<:Real}
     F2 = [[(@tullio _[a,b,c,d] := fᵗ[a,b,c] d∈1:2) |> collect for fᵗ in f] for f in F]
     FMPEM2 = fourier_tensor_train.(F2)
-    convolution(FMPEM2,J,P; kw...)
+    convolution(FMPEM2,J,P,T; kw...)
 end
 
 
@@ -136,7 +135,7 @@ function onebpiter_fourier!(bp::MPBP, i::Integer, K::Integer; P=2.0, σ=1/50, sv
     scale = dᵢ+ceil(dᵢ/4)
 
     μ_fourier = [fourier_tensor_train_spin(μ[k], K, scale, P, σ) for k in idx.(ein)]
-    dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, svd_trunc)
+    dest, (conv_μ_full,) = convolution(μ_fourier, J, P, getT(bp); K, svd_trunc)
     (conv_μ,) = unzip(dest)
 
     for (j, e_out) in enumerate(eout)
@@ -232,14 +231,13 @@ function iterate_fourier_infinite_regular!(bp::MPBP, K::Integer; maxiter::Intege
     return maxiter, cb
 end
 
-function onebpiter_fourier_popdyn!(μ, K, wᵢ, dᵢ, ϕᵢ, svd_trunc, P, σ)
+function onebpiter_fourier_popdyn!(μ::Vector{<:TensorTrain{F,N}}, K, wᵢ, dᵢ, ϕᵢ, svd_trunc, P, T, σ) where {F,N}
     wᵢᵗ = wᵢ[1]
     J, hᵢ, β = float.(wᵢᵗ.J), wᵢᵗ.h, wᵢᵗ.β
-    scale = dᵢ + ceil(dᵢ/4)
+    scale = dᵢ + ceil(dᵢ/4) + (dᵢ==0)
 
-    μ_fourier = [fourier_tensor_train_spin(μk, K, scale, P, σ) for μk in μ]
-    @show typeof(μ_fourier)
-    dest, (conv_μ_full,) = convolution(μ_fourier, J, P; K, svd_trunc)
+    μ_fourier = TensorTrain{F,N}[fourier_tensor_train_spin(μk, K, scale, P, σ) for μk in μ]
+    dest, (conv_μ_full,) = convolution(μ_fourier, J, P, T; K, svd_trunc)
     (conv_μ,) = unzip(dest)
 
     for j in eachindex(conv_μ)
@@ -256,18 +254,18 @@ function onebpiter_fourier_popdyn!(μ, K, wᵢ, dᵢ, ϕᵢ, svd_trunc, P, σ)
     return μ, belief
 end
 
-function iterate_fourier_popdyn!(μ_pop, popsize, bs, bs2var, prob_degree, prob_J, prob_h, K::Integer, β, ϕᵢ, T; maxiter=100, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, tol=1e-10, P::Real=2.0, σ::Real=1/50)
+function iterate_fourier_popdyn!(μ_pop::Vector{<:TensorTrain{F,N}}, popsize, bs, bs2var, prob_degree, prob_J, prob_h, K::Integer, β, ϕᵢ, T; maxiter=100, svd_trunc::SVDTrunc=TruncThresh(1e-6), showprogress=true, tol=1e-10, P::Real=2.0, σ::Real=1/50) where {F<:Complex,N}
     @showprogress for it in 1:maxiter
         dᵢ = rand(prob_degree)
-        dᵢ > popsize-1 && error("Sampled degree $(dᵢ) greater than population size $popsize")
-        dᵢ < 1 && continue
+        dᵢ > popsize && error("Sampled degree $(dᵢ) greater than population size $popsize")
+        # dᵢ < 1 && continue
 
         indices = rand(eachindex(μ_pop), dᵢ)
         J = rand(prob_J, dᵢ)
         h = rand(prob_h)
         wᵢ = fill(GlauberFactor(J, h, β), T+1)
 
-        μ, b = onebpiter_fourier_popdyn!(deepcopy(μ_pop[indices]), K, wᵢ, dᵢ, ϕᵢ, svd_trunc, P, σ)
+        μ, b = onebpiter_fourier_popdyn!(deepcopy(μ_pop[indices]), K, wᵢ, dᵢ, ϕᵢ, svd_trunc, P, T, σ)
         μ_pop[indices] .= μ
         push!(bs, [real.(m) for m in marginals(b)])
         push!(bs2var, [real.(m) for m in twovar_marginals(b)])
