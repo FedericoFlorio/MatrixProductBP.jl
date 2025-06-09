@@ -11,7 +11,7 @@ function (fᵢ::GlauberFactor)(xᵢᵗ⁺¹::Integer,
     @assert all(x ∈ 1:2 for x in xₙᵢᵗ)
     @assert length(xₙᵢᵗ) == length(fᵢ.J)
 
-    hⱼᵢ = sum( Jᵢⱼ * potts2spin(xⱼᵗ) for (xⱼᵗ,Jᵢⱼ) in zip(xₙᵢᵗ, fᵢ.J))
+    hⱼᵢ = sum((Jᵢⱼ * potts2spin(xⱼᵗ) for (xⱼᵗ,Jᵢⱼ) in zip(xₙᵢᵗ, fᵢ.J)); init=0.0)
     E = - fᵢ.β * (potts2spin(xᵢᵗ⁺¹) * (hⱼᵢ + fᵢ.h))
     return 1 / (1 + exp(2E))
 end
@@ -32,7 +32,7 @@ function (fᵢ::GenericGlauberFactor)(xᵢᵗ⁺¹::Integer,
     @assert all(x ∈ 1:2 for x in xₙᵢᵗ)
     @assert length(xₙᵢᵗ) == length(fᵢ.βJ)
 
-    hⱼᵢ = sum( Jᵢⱼ * potts2spin(xⱼᵗ) for (xⱼᵗ,Jᵢⱼ) in zip(xₙᵢᵗ, fᵢ.βJ))
+    hⱼᵢ = sum((Jᵢⱼ * potts2spin(xⱼᵗ) for (xⱼᵗ,Jᵢⱼ) in zip(xₙᵢᵗ, fᵢ.βJ));init=0.0)
     E = - potts2spin(xᵢᵗ⁺¹) * (hⱼᵢ + fᵢ.βh)
     return 1 / (1 + exp(2E))
 end

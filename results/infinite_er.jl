@@ -16,8 +16,8 @@ using Plots
 # h = 0.0
 
 # popsize = 10^2
-# svd_trunc = TruncBond(5)
-# K = 20
+# svd_trunc = TruncBond(7)
+# K = 30
 # σ = 1/30
 
 # ϕᵢ = [t == 0 ? [(1-m⁰)/2, (1+m⁰)/2] : ones(2) for t in 0:T]
@@ -36,13 +36,7 @@ using Plots
 # bs2var =  Matrix{Matrix{Float64}}[]
 
 
-# iterate_fourier_popdyn!(μ_pop, popsize, bs, bs2var, prob_degree, prob_J, prob_h, K, β, ϕᵢ, T; maxiter=1000, svd_trunc, tol=1e-10, σ)
-
-# ns = 500
-# range = length(btus)+1-min(ns, length(btus)):length(btus)
-# ms = [expectation.(potts2spin, b) for b in bs[range]]
-# m_avg = mean(ms)
-# m_std = std(ms) ./ sqrt(length(ms))
+# iterate_fourier_popdyn!(μ_pop, popsize, bs, bs2var, prob_degree, prob_J, prob_h, K, β, ϕᵢ, T; maxiter=2000, svd_trunc, tol=1e-10, σ)
 
 function glauber_factors_(ising::Ising, T::Integer)
     β = ising.β
@@ -65,15 +59,19 @@ end
 
 seed = 1
 N = 5*10^3
+nsamples = 5*10^5
 g = erdos_renyi(N, c/N; seed)
 ising = Ising(IndexedGraph(g); J=rand(ne(g)), h=fill(h,N), β)
 bp = mpbp_(Glauber(ising, T); ϕ = fill(ϕᵢ, N))
 sms = SoftMarginSampler(bp)
-sample!(sms, 5*10^3)
-traj_mc = [vec(potts2spin.(mean(X, dims=1))) for X in sms.X]
+sample!(sms, nsamples)
+traj_mc = reduce(vcat, potts2spin.(X) for X in sms.X)
 
-m_mc = mean(traj_mc)
-σ_mc = std(traj_mc) ./ sqrt(N)
+means_mc = [vec(potts2spin.(mean(X, dims=1))) for X in sms.X]
+stds_mc = [vec(std(potts2spin.(X), dims=1)./sqrt(N)) for X in sms.X]
+
+m_mc = mean(means_mc)
+σ_mc = sum(stds_mc) ./ nsamples
 
 using JLD2
 jldsave("results/popdyn_infinite_er.jld2"; bs, bs2var, m_mc, σ_mc)

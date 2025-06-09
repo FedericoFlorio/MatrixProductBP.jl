@@ -6,7 +6,7 @@ function offset_fourier_freqs(tensors::Vector{Array{F,N}}, ax::Vector{Int64}) wh
     A = map(tensors) do Aᵗ
         for i in ax
             K = (size(Aᵗ)[i]-1)/2
-            isinteger(K) ? K=Int(K) : throw(ArgumentError("Wrong dimension for axis of coefficients"))
+            isinteger(K) ? K=Int(K) : throw(ArgumentError("Wrong dimension for axis of coefficients, got K=$(K)"))
             oldaxes = axes(Aᵗ)
             newaxes = [oldaxes[begin:i-1]..., -K:K, oldaxes[i+1:end]...]
             Aᵗ = OffsetArray(Aᵗ, newaxes...)
@@ -39,8 +39,9 @@ end
 flat_fourier_tt(bondsizes::AbstractVector{<:Integer}, q...) = flat_fourier_tt(ComplexF64, bondsizes, q...)
 flat_fourier_tt(d::Integer, L::Integer, q...) = flat_fourier_tt([1; fill(d, L-1); 1], q...)
 
-function rand_fourier_tt(::Type{T}, bondsizes::AbstractVector{<:Integer}, q...) where {T<:Complex}
-    rand_tt(T, bondsizes, q)
+function rand_fourier_tt(::Type{Tp}, bondsizes::AbstractVector{<:Integer}, q...) where {Tp<:Complex}
+    tensors = rand_tt(Tp, bondsizes, q...).tensors
+    fourier_tensor_train(tensors)
 end
 rand_fourier_tt(bondsizes::AbstractVector{<:Integer}, q...) = rand_fourier_tt(ComplexF64, bondsizes, q...)
 rand_fourier_tt(d::Integer, L::Integer, q...) = rand_fourier_tt([1; fill(d, L-1); 1], q...)
