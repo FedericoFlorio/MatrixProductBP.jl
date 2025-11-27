@@ -69,7 +69,7 @@ export
     RestrictedRecursiveBPFactor,
     convert_msg_beliefs,
     der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!,
-    fourier_tensor_train, flat_fourier_tt, rand_fourier_tt, fourier_tensor_train_spin, marginals_fourier,
+    fourier_tensor_train, flat_fourier_tt, rand_fourier_tt, fourier_tensor_train_spin, marginals_fourier, pairbelief,
     onebpiter_fourier!, iterate_fourier!, onebpiter_fourier_infinite_regular!, iterate_fourier_infinite_regular!, onebpiter_fourier_popdyn, iterate_fourier_popdyn!,
     mpbp_stationary, mpbp_stationary_infinite_graph, mpbp_stationary_infinite_bipartite_graph,
     CB_BPVUMPS, TruncVUMPS,
