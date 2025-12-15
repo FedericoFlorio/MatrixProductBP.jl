@@ -23,10 +23,6 @@ using CavityTools: cavity
 using LogarithmicNumbers: ULogarithmic, Logarithmic
 using LinearAlgebra: I, tr
 using Kronecker: kronecker
-using Nemo
-using Nemo: hypergeometric_2f1, AcbField, AcbFieldElem
-using Memoization: @memoize
-using OffsetArrays
 
 using TensorTrains:
     TensorTrains,
@@ -60,10 +56,7 @@ export
     draw_node_observations!, AtomicVector,
     RecursiveBPFactor, DampedFactor, RecursiveTraceFactor, GenericFactor,
     RestrictedRecursiveBPFactor,
-    convert_msg_beliefs,
-    der_λ, der_ρ, stepga!, PARAMS, CB_INF, inference_parameters!,
-    fourier_tensor_train, flat_fourier_tt, rand_fourier_tt, fourier_tensor_train_spin, marginals_fourier, pairbelief,
-    onebpiter_fourier!, iterate_fourier!, onebpiter_fourier_infinite_regular!, iterate_fourier_infinite_regular!, onebpiter_fourier_popdyn, iterate_fourier_popdyn!
+    convert_msg_beliefs
 
 include("utils.jl")
 include("atomic_vector.jl")
@@ -75,12 +68,9 @@ include("test_factors.jl")
 include("infinite_graph.jl")
 include("exact.jl")
 include("sampling.jl")
-include("sis_inference.jl")
+include("population_dynamics.jl")
 
 include("Models/Models.jl")
-using .Models: potts2spin, spin2potts, GlauberFactor
-
-include("fourier/fourier_tensor_train.jl")
-include("fourier/bp_fourier.jl")
+using .Models: potts2spin, spin2potts, f_bp_partial_i, f_bp_partial_ij, compute_prob_ys, FourierBPFactor, FourierGlauberFactor
 
 end

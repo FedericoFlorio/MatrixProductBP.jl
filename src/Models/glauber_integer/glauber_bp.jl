@@ -1,21 +1,3 @@
-struct GlauberFactor{T<:Real} <: BPFactor 
-    J :: Vector{T}      
-    h :: T
-    β :: T
-end
-
-function (fᵢ::GlauberFactor)(xᵢᵗ⁺¹::Integer, 
-    xₙᵢᵗ::AbstractVector{<:Integer}, 
-    xᵢᵗ::Integer)
-    @assert xᵢᵗ⁺¹ ∈ 1:2
-    @assert all(x ∈ 1:2 for x in xₙᵢᵗ)
-    @assert length(xₙᵢᵗ) == length(fᵢ.J)
-
-    hⱼᵢ = sum((Jᵢⱼ * potts2spin(xⱼᵗ) for (xⱼᵗ,Jᵢⱼ) in zip(xₙᵢᵗ, fᵢ.J)); init=0.0)
-    E = - fᵢ.β * (potts2spin(xᵢᵗ⁺¹) * (hⱼᵢ + fᵢ.h))
-    return 1 / (1 + exp(2E))
-end
-
 struct GenericGlauberFactor{T<:Real} <: BPFactor 
     βJ :: Vector{T}      
     βh :: T
@@ -130,7 +112,7 @@ end
 # seems to be type stable
 function glauber_factors(ising::Ising, T::Integer)
     β = ising.β
-    map(1:nv(ising.g)) do i
+    x = map(1:nv(ising.g)) do i
         ei = inedges(ising.g, i)
         ∂i = idx.(ei)
         J = ising.J[∂i]
@@ -142,13 +124,14 @@ function glauber_factors(ising::Ising, T::Integer)
             else
                 PMJGlauberFactor(Int.(sign.(J)), β*abs(Jᵢ), β*h)
             end
-        elseif all(isinteger, J)
+        elseif all(isinteger, J) || length(J)==0
             IntegerGlauberFactor(Int.(J), h, β)
         else
             GenericGlauberFactor(J, h, β)
         end
         fill(wᵢᵗ, T + 1)
     end
+    convert(Vector{Vector{mapreduce(eltype, typejoin, x)}}, x)
 end
 
 struct IntegerGlauberFactor{T<:Real}  <: RecursiveBPFactor 
