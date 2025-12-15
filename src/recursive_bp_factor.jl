@@ -116,7 +116,6 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
     end
     # now in B there are P(yₖᵗ|xₖᵗ) m_{k→i}(yₖᵗ,xᵢᵗ) ∀k,∀t  (written as MPS)
 
-    # the operation that combines together two ̃m messages
     function op((B1, d1), (B2, d2))
         BB = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
             Pyy = zeros(nstates(wᵢᵗ,d1+d2), size(B₁ᵗ,3), size(B₂ᵗ,3), size(B₁ᵗ,4))
@@ -139,10 +138,8 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
                 xᵢ in 1:qi]
             for t=1:T+1]
     init = (M2(Minit), 0)
-    # compute all-but-one `op`s
-    dest, (full,) = cavity(B, op, init)
+    dest, (full,)  = cavity(B, op, init)
     (C,) = unzip(dest)
-    C, full, B
     C, full, B
 end
 

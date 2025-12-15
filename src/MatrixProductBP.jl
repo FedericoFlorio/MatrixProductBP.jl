@@ -35,7 +35,6 @@ using TensorTrains:
     marginals, twovar_marginals, normalization, normalize!,
     svd, _compose, accumulate_L, accumulate_R,
     InfiniteUniformTensorTrain, flat_infinite_uniform_tt, TruncVUMPS, dot
-
 export 
     SVDTrunc, TruncBond, TruncThresh, TruncBondMax, TruncBondThresh,
     PeriodicMPEM2, PeriodicMPEM3, PeriodicMPEM1, getT,
@@ -66,7 +65,8 @@ export
     convert_msg_beliefs,
     mpbp_stationary, mpbp_stationary_infinite_graph, mpbp_stationary_infinite_bipartite_graph,
     CB_BPVUMPS, TruncVUMPS,
-    mean_with_uncertainty
+    mean_with_uncertainty,
+    convert_msg_beliefs
 
 
 include("utils.jl")

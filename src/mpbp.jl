@@ -342,7 +342,32 @@ function alternate_correlations(f, bp::MPBP{G,F,V,M2}) where {G,F,V,M2}
     return [expectation.(f, amij) for amij in am]
 end
 
-covariance(r::Matrix{<:Real}, μ::Vector{<:Real}) = r .- μ*μ'
+# return <f(xᵢᵗ)f(xⱼᵗ)> per each directed edge i->j
+function pair_correlations(f, bp::MPBP{G,F,V,M2}) where {G,F,V,M2}
+    am = pair_beliefs(bp)[1]
+    return [expectation.(f, amij) for amij in am]
+end
+
+# return p(xᵢᵗ,xⱼᵗ⁺¹) per each directed edge i->j
+function alternate_marginals(bp::MPBP{G,F,V,M2}) where {G,F,V,M2}
+    pbs = pair_beliefs_as_mpem(bp)[1]
+    tvs = twovar_marginals.(pbs)
+
+    return map(tvs) do tv
+        map(1:size(tv,1)-1) do t
+            tvt = tv[t,t+1]
+            dropdims(sum(tvt; dims=(2,3)); dims=(2,3))
+        end
+    end
+end
+
+# return <f(xᵢᵗ)f(xⱼᵗ⁺¹)> per each directed edge i->j
+function alternate_correlations(f, bp::MPBP{G,F,V,M2}) where {G,F,V,M2}
+    am = alternate_marginals(bp)
+    return [expectation.(f, amij) for amij in am]
+end
+
+covariance(r::Matrix{<:Number}, μ::Vector{<:Number}) = r .- μ*μ'
 
 function autocovariances(f, bp::MPBP; sites=vertices(bp.g), kw...)
     μ = means(f, bp; sites)
