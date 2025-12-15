@@ -73,7 +73,8 @@ end
 function _f_bp_partial(A::MPEM2, wᵢ::Vector{U}, ϕᵢ, 
         d::Integer, prob::Function, qj, j) where {U<:RecursiveBPFactor}
     q = length(ϕᵢ[1])
-    B = [zeros(size(a,1), size(a,2), q, qj, q) for a in A]
+    F = eltype(A)
+    B = [zeros(F, size(a,1), size(a,2), q, qj, q) for a in A]
     for t in Iterators.take(eachindex(A), length(A)-1)
         Aᵗ,Bᵗ = A[t], B[t]
         W = zeros(q,q,qj,size(Aᵗ,3))
@@ -131,7 +132,8 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
         BB, d1 + d2
     end
     
-    Minit = [[float(prob_y0(wᵢ[t], y, xᵢ)) for _ in 1:1,
+    F = elem_type(M2)
+    Minit = [[F(prob_y0(wᵢ[t], y, xᵢ)) for _ in 1:1,
                 _ in 1:1,
                 y in 1:nstates(wᵢ[t],0),
                 xᵢ in 1:qi]
@@ -146,10 +148,10 @@ end
 
 # compute outgoing messages from node `i`
 function onebpiter!(bp::MPBP{G,F,V,MsgType}, i::Integer, ::Type{U}; 
-    svd_trunc::SVDTrunc=default_truncator(MsgType), damp::Real=0.0) where {G<:AbstractIndexedDiGraph,F<:Real,U<:RecursiveBPFactor,V,MsgType}
+    svd_trunc::SVDTrunc=default_truncator(MsgType), damp::Real=0.0) where {G<:AbstractIndexedDiGraph,F<:Number,U<:RecursiveBPFactor,V,MsgType}
     @unpack g, w, ϕ, ψ, μ = bp
     ein, eout = inedges(g,i), outedges(g, i)
-    wᵢ, ϕᵢ, dᵢ  = w[i], ϕ[i], length(ein)
+    wᵢ, ϕᵢ, dᵢ  = [x for x in w[i]], ϕ[i], length(ein)
     @assert wᵢ[1] isa U
     C, full = compute_prob_ys(wᵢ, nstates(bp,i), μ[ein.|>idx], ψ[eout.|>idx], getT(bp), svd_trunc)
     sumlogzᵢ₂ⱼ = zero(F)
@@ -157,18 +159,18 @@ function onebpiter!(bp::MPBP{G,F,V,MsgType}, i::Integer, ::Type{U};
         B = f_bp_partial_ij(C[j], wᵢ, ϕᵢ, dᵢ - 1, nstates(bp, dst(e)), j)
         μj = compress!(mpem2(B); svd_trunc)
         normalize_eachmatrix!(μj)
-        sumlogzᵢ₂ⱼ += set_msg!(bp, μj, idx(e), damp, svd_trunc)
+        sumlogzᵢ₂ⱼ += real(set_msg!(bp, μj, idx(e), damp, svd_trunc))
     end
     B = f_bp_partial_i(full, wᵢ, ϕᵢ, dᵢ)
     bp.b[i] = B |> mpem2 |> marginalize
     logzᵢ = normalize!(bp.b[i])
-    bp.f[i] = (dᵢ/2-1)*logzᵢ - (1/2)*sumlogzᵢ₂ⱼ
+    bp.f[i] = real((dᵢ/2-1)*logzᵢ - (1/2)*sumlogzᵢ₂ⱼ)
     # nothing
     return logzᵢ
 end
 
 # write message to destination after applying damping
-function set_msg!(bp::MPBP{G,F1,F2,V,M2}, μj::M2, edge_id, damp, svd_trunc) where {G,F1,F2,V,M2}
+function set_msg!(bp::MPBP, μj::M2, edge_id, damp, svd_trunc) where M2<:AbstractMPEM2
     @assert 0 ≤ damp < 1
     μ_old = bp.μ[edge_id]
     logzᵢ₂ⱼ = normalize!(μj)
@@ -183,10 +185,10 @@ end
 
 # adds a further transition xᵢᵗ->xᵢᵗ⁺¹ with probability `p` and rescales all other
 #  transitions by `1-p`. Does nothing for `p=0`
-struct DampedFactor{T<:RecursiveBPFactor,F<:Real} <: RecursiveBPFactor
+struct DampedFactor{T<:RecursiveBPFactor,F<:Number} <: RecursiveBPFactor
     w :: T      # factor
     p :: F      # probability of staying in previous state        
-    function DampedFactor(w::T, p::F) where {T<:RecursiveBPFactor,F<:Real}
+    function DampedFactor(w::T, p::F) where {T<:RecursiveBPFactor,F<:Number}
         @assert 0 ≤ p ≤ 1
         new{T,F}(w, p)
     end

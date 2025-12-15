@@ -1,18 +1,51 @@
-struct MPBP{G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number, V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
+# struct MPBP{G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number, V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
+#     g     :: G                              # graph
+#     w     :: Vector{V}                      # factors, one per variable
+#     ϕ     :: Vector{Vector{Vector{F1}}}      # vertex-dependent factors
+#     ψ     :: Vector{Vector{Matrix{F1}}}      # edge-dependent factors
+#     μ     :: AtomicVector{M2}               # messages, two per edge
+#     b     :: Vector{M1}                     # beliefs in matrix product form
+#     f     :: Vector{F2}                      # free energy contributions
+    
+#     function MPBP(g::G, w::Vector{V}, 
+#             ϕ::Vector{Vector{Vector{F1}}},
+#             ψ::Vector{Vector{Matrix{F1}}},
+#             μ::Vector{M2},
+#             b::Vector{M1},
+#             f::Vector{F2}) where {G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number,
+#             V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
+    
+#         @assert issymmetric(g)
+#         T = length(w[1]) - 1
+#         @assert length(w) == length(ϕ) == length(b) == length(f) == nv(g) "$(length(w)), $(length(ϕ)), $(nv(g))"
+#         @assert length(ψ) == ne(g)
+#         @assert all( length(wᵢ) == T + 1 for wᵢ in w )
+#         @assert all( length(ϕ[i][t]) == nstates(b[i]) for i in eachindex(ϕ) for t in eachindex(ϕ[i]) )
+#         @assert all( size(ψ[k][t]) == (nstates(b[i]),nstates(b[j])) for (i,j,k) in edges(g), t in 1:T+1 )
+#         @assert check_ψs(ψ, g)
+#         @assert all( length(ϕᵢ) == T + 1 for ϕᵢ in ϕ )
+#         @assert all( length(ψᵢ) == T + 1 for ψᵢ in ψ )
+#         @assert all( length(μᵢⱼ) == T + 1 for μᵢⱼ in μ)
+#         @assert all( length(bᵢ) == T + 1 for bᵢ in b )
+#         @assert length(μ) == ne(g)
+#         return new{G,F1,F2,V,M2,M1}(g, w, ϕ, ψ, AtomicVector(μ), b, f)
+#     end
+# end
+struct MPBP{G<:AbstractIndexedDiGraph, F<:Number, V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
     g     :: G                              # graph
     w     :: Vector{V}                      # factors, one per variable
-    ϕ     :: Vector{Vector{Vector{F1}}}      # vertex-dependent factors
-    ψ     :: Vector{Vector{Matrix{F1}}}      # edge-dependent factors
+    ϕ     :: Vector{Vector{Vector{F}}}      # vertex-dependent factors
+    ψ     :: Vector{Vector{Matrix{F}}}      # edge-dependent factors
     μ     :: AtomicVector{M2}               # messages, two per edge
     b     :: Vector{M1}                     # beliefs in matrix product form
-    f     :: Vector{F2}                      # free energy contributions
+    f     :: Vector{F}                      # free energy contributions
     
     function MPBP(g::G, w::Vector{V}, 
-            ϕ::Vector{Vector{Vector{F1}}},
-            ψ::Vector{Vector{Matrix{F1}}},
+            ϕ::Vector{Vector{Vector{F}}},
+            ψ::Vector{Vector{Matrix{F}}},
             μ::Vector{M2},
             b::Vector{M1},
-            f::Vector{F2}) where {G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number,
+            f::Vector{F}) where {G<:AbstractIndexedDiGraph, F<:Number,
             V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
     
         @assert issymmetric(g)
@@ -28,7 +61,7 @@ struct MPBP{G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number, V<:AbstractVector
         @assert all( length(μᵢⱼ) == T + 1 for μᵢⱼ in μ)
         @assert all( length(bᵢ) == T + 1 for bᵢ in b )
         @assert length(μ) == ne(g)
-        return new{G,F1,F2,V,M2,M1}(g, w, ϕ, ψ, AtomicVector(μ), b, f)
+        return new{G,F,V,M2,M1}(g, w, ϕ, ψ, AtomicVector(μ), b, f)
     end
 end
 
@@ -57,7 +90,7 @@ function check_ψs(ψ::Vector{<:Vector{<:Matrix{<:Real}}}, g::IndexedBiDiGraph)
     return true
 end
 
-function mpbp(::Type{F}, g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
+function mpbp(::Type{F}, g::IndexedBiDiGraph{Int}, w::Vector{Vector{BPF}},
         q::AbstractVector{Int}, T::Int;
         d::Int=1,
         bondsizes=[1; fill(d, T); 1],
@@ -65,11 +98,11 @@ function mpbp(::Type{F}, g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor
         ψ = [[ones(q[i],q[j]) for t in 0:T] for (i,j) in edges(g)],
         μ = [flat_mpem2(F, q[i],q[j], T; d, bondsizes) for (i,j) in edges(g)],
         b = [flat_mpem1(F, q[i], T; d, bondsizes) for i in vertices(g)],
-        f = zeros(F, nv(g))) where F<:Number
+        f = zeros(nv(g))) where {F<:Number, BPF<:BPFactor}
     return MPBP(g, w, ϕ, ψ, μ, b, f)
 end
-function mpbp(g::IndexedBiDiGraph{Int}, w::Vector{<:Vector{<:BPFactor}},
-    q::AbstractVector{Int}, T::Int; kw...)
+function mpbp(g::IndexedBiDiGraph{Int}, w::Vector{Vector{BPF}},
+    q::AbstractVector{Int}, T::Int; kw...) where BPF <: BPFactor
     return mpbp(Float64, g, w, q, T; kw...)
 end
 
@@ -149,8 +182,8 @@ function onebpiter!(bp::MPBP{G,F,V,MsgType}, i::Integer, ::Type{U};
     end
     dᵢ = length(ein)
     bp.b[i] = onebpiter_dummy_neighbor(bp, i; svd_trunc) |> marginalize
-    logzᵢ = real(log(normalization(bp.b[i])))
-    bp.f[i] = (dᵢ/2-1)*logzᵢ - (1/2)*sumlogzᵢ₂ⱼ
+    logzᵢ = log(normalization(bp.b[i]))
+    bp.f[i] = real((dᵢ/2-1)*logzᵢ - (1/2)*sumlogzᵢ₂ⱼ)
     nothing
 end
 
@@ -182,7 +215,7 @@ struct CB_BP{TP<:ProgressUnknown, F, U}
         isempty(info) || (info *= "\n")
         prog = ProgressUnknown(desc=info*"Running MPBP: iter", dt=dt)
         TP = typeof(prog)
-        m = [means(f, bp)]
+        m = [means(f, bp)] .|> real
         U = typeof(bp.f[1])
         Δs = zeros(U,0)
         new{TP,F,U}(prog, m, Δs, f)
@@ -190,7 +223,7 @@ struct CB_BP{TP<:ProgressUnknown, F, U}
 end
 
 function (cb::CB_BP)(bp::MPBP, it::Integer, svd_trunc::SVDTrunc)
-    marg_new = means(cb.f, bp)
+    marg_new = means(cb.f, bp) .|> real
     marg_old = cb.m[end]
     Δ = isempty(marg_new) ? NaN : maximum(maximum(abs, mn .- mo) for (mn, mo) in zip(marg_new, marg_old))
     push!(cb.Δs, Δ)
@@ -204,9 +237,13 @@ function iterate!(bp::MPBP{G,F,V,MsgType}; maxiter::Integer=5,
         svd_trunc::SVDTrunc=default_truncator(MsgType),
         showprogress=true, cb=CB_BP(bp; showprogress), tol=1e-10, 
         nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, damp=0.0) where {G,F,V,MsgType}
+    for μ in bp.μ
+        normalize!(μ)
+    end
     for it in 1:maxiter
         Threads.@threads for i in nodes
-            onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp)
+            # onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp)
+            onebpiter!(bp, i, typeof(bp.w[i][1]); svd_trunc, damp)
         end
         Δ = cb(bp, it, svd_trunc)
         Δ < tol && return it, cb
@@ -218,8 +255,9 @@ end
 
 # compute joint beliefs for all pairs of neighbors
 # return also logzᵢⱼ contributions to logzᵢ
-function pair_beliefs(bp::MPBP{G,F}) where {G,F}
-    b = [[zeros(nstates(bp,i),nstates(bp,j)) for _ in 0:getT(bp)] for (i,j) in edges(bp.g)]
+function pair_beliefs(bp::MPBP)
+    F = elem_type(typeof(bp.μ[1])) 
+    b = [[zeros(F, nstates(bp,i),nstates(bp,j)) for _ in 0:getT(bp)] for (i,j) in edges(bp.g)]
     return _pair_beliefs!(b, pair_belief, bp)
 end
 

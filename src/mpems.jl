@@ -1,3 +1,5 @@
+elem_type(::Type{<:AbstractTensorTrain{F,N}}) where {F,N} = F
+
 const AbstractMPEM1{F} = AbstractTensorTrain{F, 3}
 const MPEM1{F} = TensorTrain{F, 3, T, Z} where {T, Z}
 const PeriodicMPEM1{F} = PeriodicTensorTrain{F, 3, T, Z} where {T, Z}

@@ -1,6 +1,5 @@
 # Fourier basis functions
-f_n(n::Int, P::Float64) = x -> exp(-im*2π/P*n*x)
-F_n(n::Int, P::Float64) = x -> exp(im*2π/P*n*x)
+u_n(n::Int, P::Float64) = x -> exp(im*2π/P*n*x)
 
 function offset_fourier_freqs(tensors::Vector{Array{F,N}}, ax::Vector{Int64}) where {F<:Complex, N}
     A = map(tensors) do Aᵗ
@@ -50,33 +49,34 @@ rand_fourier_tt(d::Integer, L::Integer, q...) = rand_fourier_tt([1; fill(d, L-1)
 """
     fourier_tensor_train_spin(A::TensorTrain{F,N}, K::Int, d::Int, P::Float64, σ::Float64) where {F,N}
 
-Computes a Fourier Tensor Train starting from a Tensor Train A, in which each tensor has three axes. The third index ``x`` of each tensor (the physical one) is assumed to represent the values for a spin ``s``, with the convention ``x=1 ⟺ s=-1`` and ``x=2 ⟺ s=+1``.
-For the purpose of going to a continuous domain, each matrix ``Aᵗ[m,n,:]`` is approximated as a linear combination of gaussians with variance ``σ²``, centered in 1 and -1: ``Aᵗ[m,n,1] g(-1,σ²) + Aᵗ[m,n,2] g(1,σ²)``.
-The extra `d` parameter provides the possibility to scale the domain of the spin (i.e. define a spin with values ±1/d).
+Computes a Fourier Tensor Train starting from a Tensor Train A, in which each tensor has three axes. The third index ``x`` of each tensor (the physical one) is assumed to represent the values of a spin ``s``, with the convention ``x=1 ⟺ s=-1`` and ``x=2 ⟺ s=+1``.
+For the purpose of going to a continuous domain, each matrix ``Aᵗ[:,:,x]`` is approximated as a linear combination of gaussians with variance ``σ²``, centered in ``+1`` and ``-1``: ``Aᵗ[m,n,1] g(-1,σ²) + Aᵗ[m,n,2] g(+1,σ²)``.
 """
-function fourier_tensor_train_spin(A::TensorTrain{U,N}, K::Int, scale::Real, P::Real, σ::Real) where {U,N}
+function fourier_tensor_train_spin(A::TensorTrain{U,N}, K::Int, P::Real, σ::Real) where {U,N}
     N<3 && throw(ArgumentError("Tensors must have at least three axes"))
     any(!=(2), [size(Aᵗ)[3] for Aᵗ in A]) && throw(ArgumentError("Third axis of tensors for spins must have dimension 2"))
 
-    k = OffsetVector([2π/(P*scale)*α for α in -K:K], -K:K)
-    expon = OffsetVector([exp(-k[α]^2 / 2 * σ^2)/(P*scale) for α in -K:K], -K:K)
+    k = OffsetVector([2π/P*α for α in -K:K], -K:K)
+    expon = OffsetVector([exp(-k[α]^2 / 2 * σ^2)/P for α in -K:K], -K:K)
     cos_kn = [expon[α] * cos(k[α]) for α in -K:K]
     sin_kn = [expon[α] * sin(k[α]) for α in -K:K]
     
     F = map(eachindex(A)) do t
         Aᵗ = reshape(A[t], size(A[t])[1:3]..., prod(size(A[t])[4:end]))
         @tullio Fᵗ[m,n,α,x] := (Aᵗ[m,n,1,x]+Aᵗ[m,n,2,x]) * cos_kn[α] + im * (Aᵗ[m,n,1,x]-Aᵗ[m,n,2,x]) * sin_kn[α]
-        # @tullio Fᵗ[m,n,α,x] := Aᵗ[m,n,1,x] * exp(im*k[α]) + Aᵗ[m,n,2,x] * exp(-im*k[α])
         return reshape(Fᵗ, size(A[t])[1], size(A[t])[2], 2K+1, size(A[t])[4:end]...)
     end
 
-    
     FTT = fourier_tensor_train(F, z=A.z)
     normalize_eachmatrix!(FTT)
     return FTT
 end
 
+"""
+    marginals_fourier(A::TensorTrain{F,N}, P::Float64) where {F<:Complex,N}
 
+Takes as input a Fourier Tensor Train `A` (with a single physical index) and computes the marginal distributions over the physical indices, returning a vector of functions. Each function represents the marginal distribution over the corresponding physical index, expressed in the continuous domain using the Fourier basis with period `P`.
+"""
 function marginals_fourier(A::TensorTrain{F,N}, P::Float64) where {F<:Complex,N}
     K = lastindex(A[1],3)
     firstindex(A[1],3) == -K || throw(ArgumentError("The Fourier basis functions must be centered at 0"))
@@ -89,7 +89,7 @@ function marginals_fourier(A::TensorTrain{F,N}, P::Float64) where {F<:Complex,N}
         pFᵗ = OffsetArray(pFᵗ, -K:K)
         norm2 = sum(abs2,pFᵗ)/P
         pFᵗ ./= sqrt(norm2)
-        x -> sum(pFᵗ[n]*F_n(n,P)(x) for n in -K:K) |> real
+        x -> sum(pFᵗ[n]*u_n(n,P)(x) for n in -K:K) |> real
     end
 end
 function marginals_fourier(A::TensorTrain{F,N}) where {F,N}
