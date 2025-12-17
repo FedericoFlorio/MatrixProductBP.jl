@@ -66,7 +66,8 @@ export
     mpbp_stationary, mpbp_stationary_infinite_graph, mpbp_stationary_infinite_bipartite_graph,
     CB_BPVUMPS, TruncVUMPS,
     mean_with_uncertainty,
-    convert_msg_beliefs
+    convert_msg_beliefs,
+    onebpiter_popdyn!, iterate_popdyn!
 
 
 include("utils.jl")
