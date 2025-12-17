@@ -51,7 +51,7 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
     (C,) = unzip(dest)
     return C, full, μ_fourier
 end
-
+compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, svd_trunc) where {U<:FourierBPFactor, M2<:InfiniteUniformMPEM2} = throw(ArgumentError("Not implemented"))
 
 function _integral_hypgeom(β,Jⱼᵢ,xⱼᵗ,hᵢ,xᵢᵗ⁺¹,kᵧ, yy)
     function _primitive_1(X,β,Jxj,bb)

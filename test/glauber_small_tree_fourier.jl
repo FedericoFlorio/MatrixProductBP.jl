@@ -76,7 +76,7 @@
     reset_messages!(bp)
     bp_fourier = mpbp_fourier(deepcopy(bp), K=300, σ=1/300)
     cb = CB_BP(bp_fourier; showprogress=false)
-    iters, cb = iterate!(bp_fourier, maxiter=50; svd_trunc, showprogress=false, tol=0)
+    iters, cb = iterate!(bp_fourier, maxiter=50; svd_trunc, showprogress=false, tol=1e-8)
     f_bethe = bethe_free_energy(bp_fourier)
     logl_bp = -f_bethe
     logp = logprob(bp_fourier, X)

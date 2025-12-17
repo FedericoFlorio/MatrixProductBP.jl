@@ -273,7 +273,7 @@ function pair_beliefs_as_mpem(bp::MPBP{G,F,V,M2}) where {G,F,V,M2}
 end
 
 function _pair_beliefs!(b, f, bp::MPBP{G,F}) where {G,F}
-    logz = zeros(nv(bp.g))
+    logz = zeros(eltype(bp.μ[1]), nv(bp.g))
     X = bp.g.X
     N = nv(bp.g)
     vals = nonzeros(X)
@@ -315,31 +315,6 @@ function means(f, bp::MPBP{G,F,V,M2}; sites=vertices(bp.g)) where {G,F,V,M2}
     map(sites) do i
         expectation.(x->f(x, i), marginals(bp.b[i]))
     end
-end
-
-# return <f(xᵢᵗ)f(xⱼᵗ)> per each directed edge i->j
-function pair_correlations(f, bp::MPBP{G,F,V,M2}) where {G,F,V,M2}
-    am = pair_beliefs(bp)[1]
-    return [expectation.(f, amij) for amij in am]
-end
-
-# return p(xᵢᵗ,xⱼᵗ⁺¹) per each directed edge i->j
-function alternate_marginals(bp::MPBP{G,F,V,M2}) where {G,F,V,M2}
-    pbs = pair_beliefs_as_mpem(bp)[1]
-    tvs = twovar_marginals.(pbs)
-
-    return map(tvs) do tv
-        map(1:size(tv,1)-1) do t
-            tvt = tv[t,t+1]
-            dropdims(sum(tvt; dims=(2,3)); dims=(2,3))
-        end
-    end
-end
-
-# return <f(xᵢᵗ)f(xⱼᵗ⁺¹)> per each directed edge i->j
-function alternate_correlations(f, bp::MPBP{G,F,V,M2}) where {G,F,V,M2}
-    am = alternate_marginals(bp)
-    return [expectation.(f, amij) for amij in am]
 end
 
 # return <f(xᵢᵗ)f(xⱼᵗ)> per each directed edge i->j

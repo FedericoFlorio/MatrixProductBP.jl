@@ -114,7 +114,6 @@ function compute_prob_ys(wᵢ::Vector{U}, qi::Int, μin::Vector{M2}, ψout, T, s
         end |> M2
         Bk, 1
     end
-    # now in B there are P(yₖᵗ|xₖᵗ) m_{k→i}(yₖᵗ,xᵢᵗ) ∀k,∀t  (written as MPS)
 
     function op((B1, d1), (B2, d2))
         BB = map(zip(wᵢ,B1,B2)) do (wᵢᵗ,B₁ᵗ,B₂ᵗ)
@@ -167,7 +166,7 @@ function onebpiter!(bp::MPBP{G,F,V,MsgType}, i::Integer, ::Type{U};
 end
 
 # write message to destination after applying damping
-function set_msg!(bp::MPBP, μj::M2, edge_id, damp, svd_trunc) where M2<:AbstractMPEM2
+function set_msg!(bp::MPBP{G,F,V,M2}, μj::M2, edge_id, damp, svd_trunc) where {G,F,V,M2}
     @assert 0 ≤ damp < 1
     μ_old = bp.μ[edge_id]
     logzᵢ₂ⱼ = normalize!(μj)
