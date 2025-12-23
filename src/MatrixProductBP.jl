@@ -1,7 +1,7 @@
 module MatrixProductBP
 
 using InvertedIndices: Not
-using ProgressMeter: Progress, ProgressUnknown, next!
+using ProgressMeter: Progress, ProgressUnknown, next!, @showprogress
 using TensorCast: @reduce, @cast, TensorCast
 # using LoopVectorization
 using Tullio: @tullio

@@ -12,11 +12,13 @@ struct FourierGlauberFactor{T<:Real} <: FourierBPFactor
     σ::Float64          # width of Gaussian to approximate spins
     P::Float64          # Period
     scale::Float64      # scaling factor
+    p :: Float64              # probability of staying in previous state
 end
-function FourierGlauberFactor(J::Vector{T}, h::T, β::T; K::Integer=100, σ::Float64=1/100, P::Float64=2.0) where {T<:Real}
+function FourierGlauberFactor(J::Vector{T}, h::T, β::T; K::Integer=100, σ::Float64=1/100, P::Float64=2.0, p::Float64=0.0) where {T<:Real}
+    @assert 0.0 ≤ p ≤ 1.0
     d = length(J)
     scale = 1 + ceil(d/4) / (d+1)   # = (d + 1 + ceil(d/4)) / (d+1)
-    return FourierGlauberFactor{T}(J, h, β, K, σ, P, scale)
+    return FourierGlauberFactor{T}(J, h, β, K, σ, P, scale, p)
 end
 
 function (fᵢ::FourierGlauberFactor)(xᵢᵗ⁺¹::Integer, 
@@ -28,13 +30,18 @@ function (fᵢ::FourierGlauberFactor)(xᵢᵗ⁺¹::Integer,
 
     hⱼᵢ = sum((Jᵢⱼ * potts2spin(xⱼᵗ) for (xⱼᵗ,Jᵢⱼ) in zip(xₙᵢᵗ, fᵢ.J)); init=0.0)
     E = - fᵢ.β * (potts2spin(xᵢᵗ⁺¹) * (hⱼᵢ + fᵢ.h))
-    return 1 / (1 + exp(2E))
+    return fᵢ.p * (xᵢᵗ⁺¹==xᵢᵗ) + (1-fᵢ.p) / (1 + exp(2E))
+end
+
+function DampedFactor(w::FourierBPFactor, p::Float64)
+    @assert 0.0 ≤ p ≤ 1.0
+    return FourierGlauberFactor(w.J, w.h, w.β, w.K, w.σ, w.P, w.scale, p)
 end
 
 Base.convert(::Type{<:AbstractTensorTrain{F1,N}}, A::TT) where {F1<:Number,N,TT<:AbstractTensorTrain} = 
     TensorTrain([F1.(a) for a in A]; z = A.z)
 
-function mpbp_fourier(bp::MPBP; K=100, σ=1/100, P=2.0, kw...)
+function mpbp_fourier(bp::MPBP; K=100, σ=1/100, P=2.0, kw...)   # does not handle DampedFactor yet
     @unpack g, w, ϕ, ψ, μ = bp
     T = getT(bp)
 

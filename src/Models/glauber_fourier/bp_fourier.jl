@@ -102,6 +102,7 @@ function _f_bp_partial(A::MPEM2, wᵢ::Vector{U}, ϕᵢ,
     wᵢᵗ = wᵢ[1]
     K, P = wᵢᵗ.K, wᵢᵗ.P
     J, hᵢ, β = float(wᵢᵗ.J[j]), wᵢᵗ.h, wᵢᵗ.β
+    p = wᵢᵗ.p
     scale = wᵢᵗ.scale
     Pscale = d * scale * P
     ybound = d * P / 2
@@ -111,11 +112,12 @@ function _f_bp_partial(A::MPEM2, wᵢ::Vector{U}, ϕᵢ,
 
     B = map(eachindex(A)) do t
         Aᵗ, ϕᵢᵗ = A[t], ϕᵢ[t]
-        @tullio Bᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := Aᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ] * ϕᵢᵗ[xᵢᵗ]
+        @tullio C[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := Aᵗ[m,n,γ,xᵢᵗ] * In[γ,xᵢᵗ⁺¹,xⱼᵗ]
+        @tullio Bᵗ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := (p * (Pscale) * (xᵢᵗ⁺¹==xᵢᵗ) * Aᵗ[m,n,0,xᵢᵗ] + (1-p) * C[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹]) * ϕᵢᵗ[xᵢᵗ]
         return Bᵗ
     end
     Aᵀ, ϕᵢᵀ = A[end], ϕᵢ[end]
-    @tullio Bᵀ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := Aᵀ[m,n,0,xᵢᵗ] * Pscale * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:qj, xᵢᵗ⁺¹∈1:2
+    @tullio Bᵀ[m,n,xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹] := Aᵀ[m,n,0,xᵢᵗ] * (Pscale) * ϕᵢᵀ[xᵢᵗ] xⱼᵗ∈1:qj, xᵢᵗ⁺¹∈1:2
     B[end] = Bᵀ
 
     return MPEM3(collect.(B), z=A.z)
@@ -128,6 +130,6 @@ end
 
 # compute matrix B for bᵢ
 function f_bp_partial_i(A::AbstractMPEM2, wᵢ::Vector{U}, ϕᵢ, d::Integer) where {U<:FourierBPFactor}
-    w = FourierGlauberFactor([0.0], wᵢ[1].h, wᵢ[1].β, wᵢ[1].K, wᵢ[1].σ, wᵢ[1].P, wᵢ[1].scale)
+    w = FourierGlauberFactor([0.0], wᵢ[1].h, wᵢ[1].β, wᵢ[1].K, wᵢ[1].σ, wᵢ[1].P, wᵢ[1].scale, wᵢ[1].p)
     _f_bp_partial(A, fill(w,length(A)), ϕᵢ, d+1, x->x, 1, 1)
 end

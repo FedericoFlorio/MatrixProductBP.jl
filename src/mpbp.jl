@@ -1,36 +1,3 @@
-# struct MPBP{G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number, V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
-#     g     :: G                              # graph
-#     w     :: Vector{V}                      # factors, one per variable
-#     ϕ     :: Vector{Vector{Vector{F1}}}      # vertex-dependent factors
-#     ψ     :: Vector{Vector{Matrix{F1}}}      # edge-dependent factors
-#     μ     :: AtomicVector{M2}               # messages, two per edge
-#     b     :: Vector{M1}                     # beliefs in matrix product form
-#     f     :: Vector{F2}                      # free energy contributions
-    
-#     function MPBP(g::G, w::Vector{V}, 
-#             ϕ::Vector{Vector{Vector{F1}}},
-#             ψ::Vector{Vector{Matrix{F1}}},
-#             μ::Vector{M2},
-#             b::Vector{M1},
-#             f::Vector{F2}) where {G<:AbstractIndexedDiGraph, F1<:Number, F2<:Number,
-#             V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
-    
-#         @assert issymmetric(g)
-#         T = length(w[1]) - 1
-#         @assert length(w) == length(ϕ) == length(b) == length(f) == nv(g) "$(length(w)), $(length(ϕ)), $(nv(g))"
-#         @assert length(ψ) == ne(g)
-#         @assert all( length(wᵢ) == T + 1 for wᵢ in w )
-#         @assert all( length(ϕ[i][t]) == nstates(b[i]) for i in eachindex(ϕ) for t in eachindex(ϕ[i]) )
-#         @assert all( size(ψ[k][t]) == (nstates(b[i]),nstates(b[j])) for (i,j,k) in edges(g), t in 1:T+1 )
-#         @assert check_ψs(ψ, g)
-#         @assert all( length(ϕᵢ) == T + 1 for ϕᵢ in ϕ )
-#         @assert all( length(ψᵢ) == T + 1 for ψᵢ in ψ )
-#         @assert all( length(μᵢⱼ) == T + 1 for μᵢⱼ in μ)
-#         @assert all( length(bᵢ) == T + 1 for bᵢ in b )
-#         @assert length(μ) == ne(g)
-#         return new{G,F1,F2,V,M2,M1}(g, w, ϕ, ψ, AtomicVector(μ), b, f)
-#     end
-# end
 struct MPBP{G<:AbstractIndexedDiGraph, F<:Number, V<:AbstractVector{<:BPFactor}, M2<:AbstractMPEM2, M1<:AbstractMPEM1}
     g     :: G                              # graph
     w     :: Vector{V}                      # factors, one per variable
