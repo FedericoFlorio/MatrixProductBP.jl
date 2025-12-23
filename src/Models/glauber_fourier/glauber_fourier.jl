@@ -12,7 +12,7 @@ struct FourierGlauberFactor{T<:Real} <: FourierBPFactor
     σ::Float64          # width of Gaussian to approximate spins
     P::Float64          # Period
     scale::Float64      # scaling factor
-    p :: Float64              # probability of staying in previous state
+    p :: Float64        # probability of staying in previous state
 end
 function FourierGlauberFactor(J::Vector{T}, h::T, β::T; K::Integer=100, σ::Float64=1/100, P::Float64=2.0, p::Float64=0.0) where {T<:Real}
     @assert 0.0 ≤ p ≤ 1.0
@@ -52,7 +52,6 @@ function mpbp_fourier(bp::MPBP; K=100, σ=1/100, P=2.0, kw...)   # does not hand
                 FourierGlauberFactor(wᵢᵗ.βJ ./ β, wᵢᵗ.βh / β, β; K, σ, P)
             else 
                 wᵢᵗ
-                # FourierGlauberFactor(wᵢᵗ.J .* wᵢᵗ.β ./ β, wᵢᵗ.h .* wᵢᵗ.β / β, wᵢᵗ.β .* β)
             end
         end
     end
