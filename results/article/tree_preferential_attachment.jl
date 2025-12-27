@@ -12,7 +12,7 @@ seed = 1
 rng = MersenneTwister(seed)
 
 T = 10
-N = 10
+N = 100
 gg = barabasi_albert(N, 2, 1; rng, complete=true)
 g = IndexedBiDiGraph(gg)
 
@@ -29,7 +29,7 @@ for i in axes(J)[1], j in axes(J)[2]
         J[i,j] = 2*rand(rng)-1
         # J[i,j] = rand(rng)
         # J[i,j] = 1.0
-        # J[j,i] = J[i,j]
+        J[j,i] = J[i,j]
     end
 end
 
@@ -76,7 +76,7 @@ sms = SoftMarginSampler(bp_mc)
 X = zeros(Int, Nmc, T+1)
 # autocorrs_mc = [zeros(T+1) for _ in 1:Nmc]
 m_mc = [zeros(T+1) for _ in 1:Nmc]
-energy_mc = [zeros(T) for _ in 1:Nmc, _ in 1:Nmc]
+energy_mc = zeros(T)
 
 @showprogress for samp in 1:nsamples
     onesample!(X, bp_mc)
@@ -86,7 +86,7 @@ energy_mc = [zeros(T) for _ in 1:Nmc, _ in 1:Nmc]
     end
     for ed in edges(g)
         j,i = ed.src, ed.dst
-        energy_mc[i,j] .+= @views potts2spin.(X[i,2:end]) .* potts2spin.(X[j,1:end-1]) .* J[j,i]
+        energy_mc .+= @views potts2spin.(X[i,2:end]) .* potts2spin.(X[j,1:end-1]) .* J[j,i]
     end
 end
 
@@ -97,4 +97,4 @@ energy_mc ./= nsamples
 
 using JLD2
 jldsave("results/article/tree_$(N)_beta0,5_h0,1_randomJ.jld2"; m_fourier, energy_fourier, J)
-jldsave("results/article/monte_carlo_tree_$(N)_disordered_posneg_beta0,5_Nmc$(Nmc)_nsamp$(nsamples).jld2"; m_mc, autocorr_mc, energy_mc)
+jldsave("results/article/monte_carlo_tree_$(N)_randomJ_beta0,5_h0,1_Nmc$(Nmc)_nsamp$(nsamples).jld2"; m_mc, energy_mc)

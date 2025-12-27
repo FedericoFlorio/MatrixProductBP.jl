@@ -3,7 +3,7 @@ Pkg.activate(".")
 
 using Revise
 using MatrixProductBP, MatrixProductBP.Models
-using Graphs, IndexedGraphs, Statistics, Random, LinearAlgebra, TensorTrains, SparseArrays
+using Graphs, IndexedGraphs, Statistics, Random, LinearAlgebra, TensorTrains, SparseArrays, Tullio, TensorCast, ProgressMeter
 import ProgressMeter; ProgressMeter.ijulia_behavior(:clear)
 using TensorTrains: summary_compact
 using Plots
@@ -37,36 +37,42 @@ end
 ψ_neutral = [ones(2,2) for t in 0:T]
 ϕ = fill(ϕᵢ, nv(g))
 
-w_fourier = [fill(GlauberFactor([J[ed.src,ed.dst] for ed in inedges(g,i)], h, β), T+1) for i in vertices(g)]
-bp_fourier = mpbp(ComplexF64, g, w_fourier, fill(2, nv(g)), T; ϕ)
+# w_fourier = [fill(GlauberFactor([J[ed.src,ed.dst] for ed in inedges(g,i)], h, β), T+1) for i in vertices(g)]
+# bp_fourier = mpbp(ComplexF64, g, w_fourier, fill(2, nv(g)), T; ϕ)
 
-bondsizes = [15]
-maxiters = [20]
-tol = 1e-10
+# bondsizes = [15]
+# maxiters = [20]
+# tol = 1e-10
 
-iters_fourier = zeros(Int, length(maxiters))
-for i in eachindex(maxiters)
-    iters_fourier[i], cb_fourier = iterate_fourier!(bp_fourier, K; maxiter=maxiters[i], σ, svd_trunc=TruncBond(bondsizes[i]), tol)
-end
+# iters_fourier = zeros(Int, length(maxiters))
+# for i in eachindex(maxiters)
+#     iters_fourier[i], cb_fourier = iterate_fourier!(bp_fourier, K; maxiter=maxiters[i], σ, svd_trunc=TruncBond(bondsizes[i]), tol)
+# end
 
-# to check
-probs(x,t) = x[t,t+1]
+# function pairbelief(μ1, μ2)
+#     map(eachindex(μ1)) do t
+#         μ1ᵗ, μ2ᵗ = μ1[t], μ2[t]
+#         @tullio b_pair_ᵗ[m1,m2,n1,n2,xᵢᵗ,xⱼᵗ] := μ1ᵗ[m1,n1,xᵢᵗ,xⱼᵗ] * μ2ᵗ[m2,n2,xⱼᵗ,xᵢᵗ]
+#         @cast b_pairᵗ[(m1,m2),(n1,n2),xᵢᵗ,xⱼᵗ] := b_pair_ᵗ[m1,m2,n1,n2,xᵢᵗ,xⱼᵗ]
+#     end |> TensorTrain
+# end
+# probs(x,t) = x[t,t+1]
 
-energy_fourier = zeros(N,N,T+1)
-for edout in edges(g)
-    i,j = src(edout), dst(edout)
-    edin = get_edge(g,j,i)
+# energy_fourier = zeros(N,N,T)
+# for edout in edges(g)
+#     i,j = src(edout), dst(edout)
+#     edin = get_edge(g,j,i)
 
-    μᵢⱼ = bp_fourier.μ[edout|>idx]
-    μⱼᵢ = bp_fourier.μ[edin|>idx]
-    bᵢⱼ = pairbelief(μᵢⱼ, μⱼᵢ)
-    Jⱼᵢ = J[j,i]
-    pᵢⱼ = [real.(m) for m in twovar_marginals(bᵢⱼ)]
-    p = [(@tullio _[xᵢᵗ⁺¹, xⱼᵗ] := probs(pᵢⱼ, $t)[xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹,xⱼᵗ⁺¹]) for t in 1:T]
+#     μᵢⱼ = bp_fourier.μ[edout|>idx]
+#     μⱼᵢ = bp_fourier.μ[edin|>idx]
+#     bᵢⱼ = pairbelief(μᵢⱼ, μⱼᵢ)
+#     Jⱼᵢ = J[j,i]
+#     pᵢⱼ = [real.(m) for m in twovar_marginals(bᵢⱼ)]
+#     p = [(@tullio _[xᵢᵗ⁺¹, xⱼᵗ] := probs(pᵢⱼ, $t)[xᵢᵗ,xⱼᵗ,xᵢᵗ⁺¹,xⱼᵗ⁺¹]) for t in 1:T]
 
-    energy_fourier[i,j,:] .= Jⱼᵢ .* expectation.(potts2spin, p)
-end
-# end check
+#     energy_fourier[i,j,:] .= Jⱼᵢ .* expectation.(potts2spin, p)
+# end
+
 
 Nmc = N
 nsamples = 10^6
@@ -87,18 +93,16 @@ energy_mc = zeros(T)
     end
     for ed in edges(g)
         j, i = src(ed), dst(ed)
-        energy_mc .+= potts2spin.(X[i,2:end]) .* potts2spin.(X[j,1:end-1]) .* J[ed|>idx]
+        energy_mc .+= potts2spin.(X[i,2:end]) .* potts2spin.(X[j,1:end-1]) .* J[j,i]
     end
 end
 
 autocorrs_mc ./= nsamples
 means_mc ./= nsamples
 autocorrs_mc .-= means_mc .* [x[end] for x in means_mc]
-autocorr_mc = mean([abs.(x) for x in autocorrs_mc])
-m_mc = mean(means_mc)
-energy_mc ./= nsamples * Nmc * K
+energy_mc ./= nsamples
 
 using JLD2
-jldsave("results/article/barabasi_albert_$(N)_beta0,5_h0,1_randomJ.jld2"; m_fourier, energy_fourier)
-jldsave("results/article/monte_carlo_barabasi_albert_disordered_posneg_beta0,5_Nmc$(Nmc)_nsamp$(nsamples)_T2.jld2"; m_mc, autocorr_mc, energy_mc)
+# jldsave("results/article/barabasi_albert_$(N)_beta0,5_h0,1_randomJ.jld2"; m_fourier, energy_fourier, J)
+jldsave("results/article/monte_carlo_barabasi_albert_disordered_beta0,5_Nmc$(Nmc)_nsamp$(nsamples).jld2"; means_mc, autocorrs_mc, energy_mc)
 
