@@ -28,7 +28,7 @@ Performs population dynamics over a population of messages `μ_pop`. The functio
 function iterate_popdyn!(μ_pop::AbstractVector{<:TensorTrain{F,N}}, w::Vector{<:RecursiveBPFactor}, prob_degree, prob_w, statvecs=(bs);
     maxiter=10^2, svd_trunc=TruncThresh(1e-6), ns::Integer=2, T::Integer=length(μ_pop[1])-1,
     ϕ=[ones(2) for t in 0:T], ψ=[ones(2,2) for t in 0:T], stats=default_stats!) where {F<:Number, N}
-    @showprogress for n in 1:maxiter
+    @showprogress Threads.@threads for n in 1:maxiter
         dᵢ = rand(prob_degree)
         wᵢ = prob_w(w; d=dᵢ)
         indices = rand(eachindex(μ_pop), dᵢ)
