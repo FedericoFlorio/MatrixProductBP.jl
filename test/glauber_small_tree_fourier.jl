@@ -29,61 +29,61 @@
     X, observed = draw_node_observations!(bp, N; rng)
     bp_fourier = mpbp_fourier(deepcopy(bp), K=300, σ=1/300)
 
-    # svd_trunc = TruncBond(10)
-    # cb_fourier = CB_BP(bp_fourier; showprogress=false, info="Glauber Fourier")
-    # iterate!(bp_fourier; maxiter=20, svd_trunc, cb=cb_fourier)
+    svd_trunc = TruncBond(10)
+    cb_fourier = CB_BP(bp_fourier; showprogress=false, info="Glauber Fourier")
+    iterate!(bp_fourier; maxiter=20, svd_trunc, cb=cb_fourier)
 
-    # b_bp_fourier = beliefs(bp_fourier)
-    # p_bp_fourier = [[bbb[2] for bbb in bb] for bb in b_bp_fourier]
+    b_bp_fourier = beliefs(bp_fourier)
+    p_bp_fourier = [[bbb[2] for bbb in bb] for bb in b_bp_fourier]
 
-    # p_exact, Z_exact = exact_prob(bp)
-    # b_exact = exact_marginals(bp; p_exact)
-    # p_ex = [[bbb[2] for bbb in bb] for bb in b_exact]
+    p_exact, Z_exact = exact_prob(bp)
+    b_exact = exact_marginals(bp; p_exact)
+    p_ex = [[bbb[2] for bbb in bb] for bb in b_exact]
 
-    # f_bethe_fourier = bethe_free_energy(bp_fourier)
-    # Z_bp_fourier = exp(-f_bethe_fourier)
+    f_bethe_fourier = bethe_free_energy(bp_fourier)
+    Z_bp_fourier = exp(-f_bethe_fourier)
 
-    # f(x,i) = potts2spin(x,i)
+    f(x,i) = potts2spin(x,i)
 
-    # r_bp_fourier = autocorrelations(f, bp_fourier)
-    # r_exact = exact_autocorrelations(f, bp; p_exact)
+    r_bp_fourier = autocorrelations(f, bp_fourier)
+    r_exact = exact_autocorrelations(f, bp; p_exact)
 
-    # c_bp_fourier = autocovariances(f, bp_fourier)
-    # c_exact = exact_autocovariances(f, bp; r = r_exact)
+    c_bp_fourier = autocovariances(f, bp_fourier)
+    c_exact = exact_autocovariances(f, bp; r = r_exact)
 
-    # pb_bp_fourier = pair_beliefs(bp_fourier)[1]
-    # pb_bp2_fourier = marginals.(pair_beliefs_as_mpem(bp_fourier)[1])
+    pb_bp_fourier = pair_beliefs(bp_fourier)[1]
+    pb_bp2_fourier = marginals.(pair_beliefs_as_mpem(bp_fourier)[1])
 
-    # @testset "Observables" begin
-    #     @test isapprox(Z_exact, Z_bp_fourier; rtol, atol)
-    #     for (_p_ex, _p_bp) in zip(p_ex, p_bp_fourier)
-    #         @test isapprox(_p_ex, _p_bp; rtol, atol)
-    #     end
-    #     @test isapprox(r_exact, r_bp_fourier; rtol, atol)
-    #     for (_c_ex, _c_bp) in zip(c_exact, c_bp_fourier)
-    #         @test isapprox(_c_ex, _c_bp; rtol, atol)
-    #     end
-    #     for (_pb_bp, _pb_bp2) in zip(pb_bp_fourier, pb_bp2_fourier)
-    #         for (_pb_bp_mat, _pb_bp2_mat) in zip(_pb_bp, _pb_bp2)
-    #             @test isapprox(_pb_bp_mat, _pb_bp2_mat; rtol, atol)
-    #         end
-    #     end
-    # end
+    @testset "Observables" begin
+        @test isapprox(Z_exact, Z_bp_fourier; rtol, atol)
+        for (_p_ex, _p_bp) in zip(p_ex, p_bp_fourier)
+            @test isapprox(_p_ex, _p_bp; rtol, atol)
+        end
+        @test isapprox(r_exact, r_bp_fourier; rtol, atol)
+        for (_c_ex, _c_bp) in zip(c_exact, c_bp_fourier)
+            @test isapprox(_c_ex, _c_bp; rtol, atol)
+        end
+        for (_pb_bp, _pb_bp2) in zip(pb_bp_fourier, pb_bp2_fourier)
+            for (_pb_bp_mat, _pb_bp2_mat) in zip(_pb_bp, _pb_bp2)
+                @test isapprox(_pb_bp_mat, _pb_bp2_mat; rtol, atol)
+            end
+        end
+    end
 
-    # # observe everything and check that the free energy corresponds to the posterior of sample `X`
-    # reset!(bp; observations=true)
-    # draw_node_observations!(bp.ϕ, X, N*(T+1), last_time=false)
-    # reset_messages!(bp)
-    # bp_fourier = mpbp_fourier(deepcopy(bp), K=300, σ=1/300)
-    # cb = CB_BP(bp_fourier; showprogress=false)
-    # iters, cb = iterate!(bp_fourier, maxiter=50; svd_trunc, showprogress=false, tol=1e-8)
-    # f_bethe = bethe_free_energy(bp_fourier)
-    # logl_bp = -f_bethe
-    # logp = logprob(bp_fourier, X)
+    # observe everything and check that the free energy corresponds to the posterior of sample `X`
+    reset!(bp; observations=true)
+    draw_node_observations!(bp.ϕ, X, N*(T+1), last_time=false)
+    reset_messages!(bp)
+    bp_fourier = mpbp_fourier(deepcopy(bp), K=300, σ=1/300)
+    cb = CB_BP(bp_fourier; showprogress=false)
+    iters, cb = iterate!(bp_fourier, maxiter=50; svd_trunc, showprogress=false, tol=1e-8)
+    f_bethe = bethe_free_energy(bp_fourier)
+    logl_bp = -f_bethe
+    logp = logprob(bp_fourier, X)
 
-    # @testset "Glauber small tree - observe everything" begin
-    #     @test isapprox(logl_bp, logp; rtol, atol)
-    # end
+    @testset "Glauber small tree - observe everything" begin
+        @test isapprox(logl_bp, logp; rtol, atol)
+    end
 
     # test DampedFactor
     p = 0.2
