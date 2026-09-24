@@ -12,7 +12,6 @@ rng = MersenneTwister(seed)
 
 T = 5
 N = 10
-# A = [0 fill(1, 1,N-1); fill(1, N-1,1) fill(0, N-1,N-1)]
 gg = barabasi_albert(N, 2, 1; rng, complete=true)
 g = IndexedBiDiGraph(gg)
 
@@ -104,4 +103,4 @@ trans_matrix = @showprogress [ptrans_ising(y, x, N, J, h, β, p) for y in 1:2^N,
 prob_exact = vcat([prob_ising], compute_exact_probabilities(prob_ising, trans_matrix, T))
 m_exact = compute_magnetizations(prob_exact, N, T)
 
-jldsave("tree_small_exact_$(N)_beta0,5_h0_randomJ_2.jld2"; prob_exact, m_exact)
+jldsave("tree_small_exact_$(N)_beta0,5_h0_randomJ.jld2"; prob_exact, m_exact)

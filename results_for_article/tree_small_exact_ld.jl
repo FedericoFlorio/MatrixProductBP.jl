@@ -12,12 +12,10 @@ rng = MersenneTwister(seed)
 
 T = 10
 N = 10
-# A = [0 fill(1, 1,N-1); fill(1, N-1,1) fill(0, N-1,N-1)]
 gg = barabasi_albert(N, 2, 1; rng, complete=true)
 g = IndexedBiDiGraph(gg)
 
-β = 4/7 * N/(N-1)   # to match the β<J> of the infinite 8-regular random graph
-# β = 0.2
+β = 0.5
 h = 0.0
 m⁰ = 0.6
 p = 0.0
@@ -46,12 +44,12 @@ w_fourier = [fill(FourierGlauberFactor([J[ed.src,ed.dst] for ed in inedges(g,i)]
 maxiter = 20
 tol = 1e-10
 
-hT = 0.5 * (-N)
+hT = 1e-4 * (-5N)
 ϕᵢ[end] = [exp(-hT), exp(hT)]
 
 bp_fourier = mpbp(ComplexF64, g, w_fourier, fill(2, nv(g)), T; ϕ)
 
-bp_h = map(0.1 .* (-N:N), -N:N) do hT, cnt
+bp_h = map(1e-4 .* (-5N:5N), -5N:5N) do hT, cnt
     println(hT)
 
     ϕᵢ[end] = [exp(-hT), exp(hT)]
@@ -64,7 +62,7 @@ bp_h = map(0.1 .* (-N:N), -N:N) do hT, cnt
     iters_fourier, cb_fourier = iterate!(bp_fourier; maxiter, svd_trunc=TruncBond(d), tol)
     m_fourier = real.(means(potts2spin, bp_fourier))
     
-    jldsave("tree_small_bp_ld_$(N)_beta0,5_h0_randomJ_$(cnt)_3.jld2"; bp_fourier.f, m_fourier)
+    jldsave("tree_small_bp_ld_$(N)_beta0,5_h0_randomJ_$(cnt).jld2"; bp_fourier.f, m_fourier)
     bp_fourier
 end
 
@@ -117,81 +115,4 @@ trans_matrix = @showprogress [ptrans_ising(y, x, N, J, h, β, p) for y in 1:2^N,
 prob_exact = vcat([prob_ising], compute_exact_probabilities(prob_ising, trans_matrix, T))
 large_dev_exact = [large_deviations(prob_exact, N, t) for t in 1:(T+1)]
 
-jldsave("tree_small_exact_ld_$(N)_beta0,5_h0_randomJ_3.jld2"; large_dev_exact)
-
-
-
-
-
-################################################################################################
-# T = 4
-# N = 7
-# # A = [0 fill(1, 1,N-1); fill(1, N-1,1) fill(0, N-1,N-1)]
-# gg = barabasi_albert(N, 2, 1; rng, complete=true)
-# g = IndexedBiDiGraph(gg)
-
-# β = 0.5
-# h = 0.0
-# m⁰ = 0.7
-# p = 0.0
-
-# J = zeros(nv(g),nv(g))
-# for i in axes(J)[1], j in axes(J)[2]
-#     # j>i && continue
-#     if has_edge(gg,i,j)
-#         J[i,j] = 2*rand(rng)-1
-#         # J[i,j] = rand(rng)
-#         # J[i,j] = 0.0
-#         J[j,i] = J[i,j]
-#     end
-# end
-
-# ϕᵢ = [t == 0 ? [(1-m⁰)/2, (1+m⁰)/2] : ones(2) for t in 0:T]
-# ψ_neutral = [ones(2,2) for t in 0:T]
-# ϕ = fill(ϕᵢ, nv(g))
-
-# maxiter = 20
-# tol = 1e-10
-
-# bp_h_nof = map(0.0001 .* (-2N:2N), -2N:2N) do hT, cnt
-#     println(hT)
-#     d = 8
-
-#     ϕᵢ = [t == 0 ? [(1-m⁰)/2, (1+m⁰)/2] : ones(2) for t in 0:T]
-#     ϕᵢ[end] = [exp(-hT), exp(hT)]
-#     ψ_neutral = [ones(2,2) for t in 0:T]
-#     ϕ = fill(ϕᵢ, nv(g))
-#     # w = [fill(DampedGlauberFactor(Float64[J[ed.src,ed.dst] for ed in inedges(g,i)], h, β, p), T+1) for i in vertices(g)]
-#     w = [fill(GenericGlauberFactor([J[ed.src,ed.dst] for ed in inedges(g,i)], h, β), T+1) for i in vertices(g)]
-#     maxiter = 20
-
-#     bp = mpbp( g, w, fill(2, nv(g)), T; ϕ)
-#     iters, cb_fourier = iterate!(bp; maxiter, svd_trunc=TruncBond(d), tol)
-#     m = means(potts2spin, bp)
-
-#     # ex_pr, ex_Z = exact_prob(bp)
-    
-#     jldsave("tree_small_bp_ld_$(N)_beta0,5_h0_randomJ_$(cnt)_nof_2.jld2"; bp.f, m)
-#     bp
-# end
-
-
-# function large_deviations(prob_exact, N, t)
-#     p = prob_exact[t]
-#     pm = OffsetVector(zeros(2N+1), -N:N)
-#     @showprogress for x in 1:2^N
-#         m = sum(spin(x,i) for i in 1:N)
-#         pm[m] += p[x]
-#     end
-#     pm
-# end
-
-# prob_ising = @showprogress [p0_ising(x,N) for x in 1:2^N]
-# trans_matrix = @showprogress [ptrans_ising(y, x, N, J, h, β, p) for y in 1:2^N, x in 1:2^N]
-# prob_exact = vcat([prob_ising], compute_exact_probabilities(prob_ising, trans_matrix, T))
-# m_exact = compute_magnetizations(prob_exact, N, T)
-
-# large_dev_exact = [large_deviations(prob_exact, N, t) for t in 1:(T+1)]
-
-# jldsave("tree_small_exact_ld_$(N)_beta0,5_h0_randomJ_nof.jld2"; large_dev_exact)
-################################################################################################
+jldsave("tree_small_exact_ld_$(N)_beta0,5_h0_randomJ.jld2"; large_dev_exact)

@@ -97,5 +97,5 @@ m_mc ./= nsamples
 energy_mc ./= nsamples
 
 using JLD2
-jldsave("configuration_$(N)_0,6_beta0,7_h0_randomJ_2.jld2"; m_fourier, energy_fourier, J)
-jldsave("monte_carlo_configuration_$(N)_0,6_randomJ_beta0,7_h0_nsamp$(nsamples)_2.jld2"; m_mc, energy_mc)
+jldsave("configuration_$(N)_0,6_beta0,7_h0_randomJ.jld2"; m_fourier, energy_fourier, J)
+jldsave("monte_carlo_configuration_$(N)_0,6_randomJ_beta0,7_h0_nsamp$(nsamples).jld2"; m_mc, energy_mc)
