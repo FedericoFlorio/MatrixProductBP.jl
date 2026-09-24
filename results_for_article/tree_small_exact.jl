@@ -10,7 +10,7 @@ using TensorTrains: summary_compact
 seed = 1
 rng = MersenneTwister(seed)
 
-T = 5
+T = 10
 N = 10
 gg = barabasi_albert(N, 2, 1; rng, complete=true)
 g = IndexedBiDiGraph(gg)
