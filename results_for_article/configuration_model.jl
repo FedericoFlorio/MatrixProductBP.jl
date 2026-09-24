@@ -18,9 +18,6 @@ kmax = 20   # maximum degree
 ω = Int[round(kmax*i^-γ) for i in 1:N]
 gg = random_configuration_model(N, ω; rng, check_graphical=true)
 g = IndexedBiDiGraph(gg)
-for i in vertices(g)
-    println("$i \t\t k = $(degree(g,i))")
-end
 
 β = 0.7
 h = 0.0
@@ -48,8 +45,8 @@ end
 w_fourier = [fill(FourierGlauberFactor([J[ed.src,ed.dst] for ed in inedges(g,i)], h, β; K, σ, P, p), T+1) for i in vertices(g)]
 bp_fourier = mpbp(ComplexF64, g, w_fourier, fill(2, nv(g)), T; ϕ)
 
-bondsizes = [8]
-maxiters = [20]
+bondsizes = [15,20]
+maxiters = [20,10]
 tol = 1e-10
 
 iters_fourier = zeros(Int, length(maxiters))
@@ -100,5 +97,5 @@ m_mc ./= nsamples
 energy_mc ./= nsamples
 
 using JLD2
-jldsave("article/configuration_$(N)_0,6_beta0,7_h0_randomJ.jld2"; m_fourier, energy_fourier, J)
-# jldsave("article/monte_carlo_configuration_$(N)_0,6_randomJ_beta0,7_h0_nsamp$(nsamples).jld2"; m_mc, energy_mc)
+jldsave("configuration_$(N)_0,6_beta0,7_h0_randomJ_2.jld2"; m_fourier, energy_fourier, J)
+jldsave("monte_carlo_configuration_$(N)_0,6_randomJ_beta0,7_h0_nsamp$(nsamples)_2.jld2"; m_mc, energy_mc)
