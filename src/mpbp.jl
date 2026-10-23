@@ -187,8 +187,8 @@ function iterate!(bp::MPBP; maxiter::Integer=5,
         showprogress=true, cb=CB_BP(bp; showprogress), tol=1e-10, 
         nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, damp=0.0)
     for it in 1:maxiter
-        # Threads.@threads for i in nodes
-        for i in nodes
+        Threads.@threads for i in nodes
+        # for i in nodes
             onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp)
         end
         Δ = cb(bp, it, svd_trunc)

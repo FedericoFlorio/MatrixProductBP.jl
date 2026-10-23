@@ -218,11 +218,12 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
     @unpack g, w = bp
     ein = inedges(g,i)
     wᵢ, dᵢ = w[i], length(ein)
+    T = getT(bp)
 
     λder, ρder, zᵢ = derivatives(bp, i; svd_trunc, logpriorder)
     
     if method==1
-        Threads.@threads for t in eachindex(wᵢ)
+        for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] += λstep*λder[j]
             end
@@ -230,7 +231,7 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==2
-        Threads.@threads for t in eachindex(wᵢ)
+        for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] *= (1 + λstep*sign(λder[j]))
             end
@@ -238,7 +239,7 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==21
-        Threads.@threads for t in eachindex(wᵢ)
+        for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] *= (1 + λstep*sign(λder[j])*5^(progress<.2))
             end
@@ -246,7 +247,7 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==3
-        Threads.@threads for t in eachindex(wᵢ)
+        for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] += λstep*sign(λder[j])
             end
@@ -254,7 +255,7 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==31
-        Threads.@threads for t in eachindex(wᵢ)
+        for t in eachindex(wᵢ)
             for j in 1:dᵢ
                 wᵢ[t].λ[j] += λstep*sign(λder[j])*5^(progress<.25)
             end
@@ -262,13 +263,13 @@ function stepga!(bp::MPBP{G,F}, i::Integer, λstep::F=1e-2, ρstep::F=1e-2; meth
         end
 
     elseif method==4
-        Threads.@threads for t in eachindex(wᵢ)
-            wᵢ[t].λ .+= λstep .* tanh.(0.5.*λder)
-            wᵢ[t].ρ += ρstep * tanh(0.5*ρder)
+        for t in eachindex(wᵢ)
+            wᵢ[t].λ .+= λstep .* tanh.(0.005.*λder)
+            wᵢ[t].ρ += ρstep * tanh(0.005*ρder)
         end
 
     elseif method==41
-        Threads.@threads for t in eachindex(wᵢ)
+        for t in eachindex(wᵢ)
             wᵢ[t].λ .+= λstep .* tanh.(0.001.*λder) * 3^(progress<.25)
             wᵢ[t].ρ += ρstep * tanh(0.001*ρder) * 3^(progress<.25)
         end
@@ -339,7 +340,8 @@ function (cb_inf::CB_INF)(bp::MPBP, logz::Float64, it::Integer, svd_trunc::SVDTr
     @unpack λ, ρ = data_old
     λold, ρold = λ, ρ
 
-    Δ = max(maximum(err(ρold,ρnew)), maximum(maximum(err(λold[i],λnew[i])) for i in eachindex(λold)))
+    maxλ = maximum(maximum(err(λold[i],λnew[i]); init=-Inf) for i in eachindex(λold); init=-Inf)
+    Δ = max(maximum(err(ρold,ρnew)), maxλ)
     push!(cb_inf.Δs, Δ)
     push!(cb_inf.data, data_new)
     push!(cb_inf.logz,logz)
@@ -358,6 +360,106 @@ function inference_parameters!(bp::MPBP; method::Integer=1, maxiter::Integer=5, 
         logz = 0.0
         Threads.@threads for i in nodes
             logz += log(stepga!(bp, i, λstep, ρstep; method, svd_trunc, logpriorder, progress=iter/maxiter))
+        end
+
+        Δ = cb_inf(bp,logz,iter,svd_trunc)
+        Δ < tol && return iter, cb_inf
+        shuffle_nodes && sample!(nodes, collect(vertices(bp.g)), replace=false)
+    end
+
+    return maxiter, cb_inf
+end
+
+function inference_parameters_uniform!(bp::MPBP; method::Integer=1, maxiter::Integer=5, λstep=1e-2, ρstep=1e-2, svd_trunc::SVDTrunc=TruncThresh(1e-6), logpriorder::Function=(x)->0.0, showprogress=true, tol=1e-10, nodes = collect(vertices(bp.g)), shuffle_nodes::Bool=true, cb_inf=CB_INF(bp;showprogress), verbose=true)
+
+    for iter in 1:maxiter
+        Threads.@threads for i in nodes
+            onebpiter!(bp, i, eltype(bp.w[i]); svd_trunc, damp=0.0)
+        end
+
+        @unpack g, w = bp
+
+        logz = 0.0
+        der_λ = 0.0
+        der_ρ = 0.0
+        Threads.@threads for i in nodes
+            ein = inedges(g,i)
+            wᵢ, dᵢ = w[i], length(ein)
+            
+            λder, ρder, zᵢ = derivatives(bp, i; svd_trunc, logpriorder)
+
+            logz += log(zᵢ)
+            der_λ += sum(λder)
+            der_ρ += ρder
+        end
+
+        progress = iter/maxiter
+
+        Threads.@threads for i in nodes
+            ein = inedges(g,i)
+            wᵢ, dᵢ = w[i], length(ein)
+            if method==1
+                Threads.@threads for t in eachindex(wᵢ)
+                    for j in 1:dᵢ
+                        wᵢ[t].λ[j] += λstep*der_λ
+                    end
+                wᵢ[t].ρ += ρstep*der_ρ
+                end
+        
+            elseif method==2
+                Threads.@threads for t in eachindex(wᵢ)
+                    for j in 1:dᵢ
+                        wᵢ[t].λ[j] *= (1 + λstep*sign(der_λ))
+                    end
+                    wᵢ[t].ρ *= (1 + ρstep*sign(der_ρ))
+                end
+        
+            elseif method==21
+                Threads.@threads for t in eachindex(wᵢ)
+                    for j in 1:dᵢ
+                        wᵢ[t].λ[j] *= (1 + λstep*sign(der_λ)*5^(progress<.2))
+                    end
+                    wᵢ[t].ρ *= (1 + ρstep*sign(der_ρ)*5^(progress<.2))
+                end
+        
+            elseif method==3
+                Threads.@threads for t in eachindex(wᵢ)
+                    for j in 1:dᵢ
+                        wᵢ[t].λ[j] += λstep*sign(der_λ)
+                    end
+                    wᵢ[t].ρ += ρstep*sign(der_ρ)
+                end
+        
+            elseif method==31
+                Threads.@threads for t in eachindex(wᵢ)
+                    for j in 1:dᵢ
+                        wᵢ[t].λ[j] += λstep*sign(der_λ)*5^(progress<.25)
+                    end
+                    wᵢ[t].ρ += ρstep*sign(der_ρ)*5^(progress<.25)
+                end
+        
+            elseif method==4
+                Threads.@threads for t in eachindex(wᵢ)
+                    wᵢ[t].λ .+= λstep .* tanh.(0.5.*der_λ)
+                    wᵢ[t].ρ += ρstep * tanh(0.5*der_ρ)
+                end
+        
+            elseif method==41
+                Threads.@threads for t in eachindex(wᵢ)
+                    wᵢ[t].λ .+= λstep .* tanh.(0.001.*der_λ) * 3^(progress<.25)
+                    wᵢ[t].ρ += ρstep * tanh(0.001*der_ρ) * 3^(progress<.25)
+                end
+        
+            else
+                @error "Invalid method"
+            end
+        
+            for t in eachindex(wᵢ)
+                for j in 1:dᵢ
+                    wᵢ[t].λ[j] = clamp(wᵢ[1].λ[j], 1e-9, 1-1e-9)
+                end
+                wᵢ[t].ρ = clamp(wᵢ[1].ρ, 1e-9, 1-1e-9)
+            end
         end
 
         Δ = cb_inf(bp,logz,iter,svd_trunc)
